@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/ceymard/swl-go/handler/coerce"
 	"github.com/ceymard/swl-go/handler/flatten"
+	"github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/json"
 	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/handler/unflatten"
@@ -34,13 +35,18 @@ func init() {
 	Register("sqlite-sink", sqlite.Sink{}, Meta{})
 	RegisterParser("sqlite-sink", sqlite.ParseSinkOptions)
 
+	// CSV source + sink (swl2 swl-csv-src/sink.ts).
+	Register("csv-src", csv.Source{}, Meta{})
+	RegisterParser("csv-src", csv.ParseSrcOptions)
+	Register("csv-sink", csv.Sink{}, Meta{})
+	RegisterParser("csv-sink", csv.ParseSinkOptions)
+
 	registerStubs()
 }
 
 // registerStubs wires placeholder handlers for not-yet-ported swl2 scripts.
 func registerStubs() {
 	stubs := []string{
-		"csv-src", "csv-sink",
 		"pg-src", "pg-sink", "my-src",
 		"duckdb-src", "duckdb-sink",
 		"xlsx-src", "xlsx-sink", "yaml-src", "yaml-sink",

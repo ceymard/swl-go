@@ -23,6 +23,40 @@ func BuildParser[T any]() (*participle.Parser[T], error) {
 // ParseArgs expands flags then parses argv into T using the given parser.
 func ParseArgs[T any](parser *participle.Parser[T], argv []string) (*T, error) {
 	argv = ExpandFlags(argv)
-	input := strings.Join(argv, " ")
-	return parser.ParseString("", input)
+	return ParseArgsNoExpand(parser, argv)
+}
+
+// ParseArgsNoExpand parses argv without ExpandFlags (for pre-split flag tokens).
+func ParseArgsNoExpand[T any](parser *participle.Parser[T], argv []string) (*T, error) {
+	return parser.ParseString("", formatArgList(argv))
+}
+
+func formatArgList(argv []string) string {
+	var b strings.Builder
+	for i, arg := range argv {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		if argNeedsQuote(arg) {
+			b.WriteByte('"')
+			b.WriteString(strings.ReplaceAll(arg, `"`, `\"`))
+			b.WriteByte('"')
+		} else {
+			b.WriteString(arg)
+		}
+	}
+	return b.String()
+}
+
+func argNeedsQuote(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, r := range s {
+		switch r {
+		case ' ', ',', ';', '\t':
+			return true
+		}
+	}
+	return false
 }

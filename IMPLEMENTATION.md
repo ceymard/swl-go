@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — SQLite source/sink implemented.*
+*Last updated: 2026-06-30 — CSV source/sink implemented.*
 
 ---
 
@@ -15,7 +15,8 @@
 | Transforms (flatten, unflatten, coerce, uncoerce) | ✅ Done |
 | JSON source + sink | ✅ Done |
 | SQLite source + sink | ✅ Done |
-| CSV, PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
+| CSV source + sink | ✅ Done |
+| PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
 | SSH tunnels | ⏳ Not started |
 | sonic JSON writer | ⏳ Deferred (Go 1.26 + sonic incompatibility; using `encoding/json`) |
 
@@ -61,7 +62,8 @@ Collection.Rows = iter.Seq2[Row, error]     // Row = map[string]any
 make build
 ./swl                          # lists handlers/extensions/protocols, exit 1
 ./swl users.json :: flatten    # source → transform → debug sink
-./swl users.json :: out.json     # source → json sink
+./swl users.csv :: out.db       # csv → sqlite
+./swl data.json :: out.csv      # json → csv
 ./swl -h                       # Kong help
 ```
 
@@ -87,7 +89,7 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 1. Kong — global flags (`-v`, `--quiet`, `-h`)
 2. `internal/pipeline` — split segments, resolve handler (alias / extension / protocol / inline JSON)
 3. `stageTarget` — path vs flags (`data.json`, `json file.json`, `flatten -o x`)
-4. `handler.ParseOptions(id, target, tail)` — Participle grammars per handler
+4. `handler.ParseOptions(id, target, tail)` — Participle or manual grammars per handler
 
 ---
 
@@ -103,7 +105,8 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `json-sink` | `handler/json` | ✅ | file / dir / `%` paths, `-o` object mode |
 | `sqlite-src` | `handler/sqlite` | ✅ | auto tables, `-q` query per table |
 | `sqlite-sink` | `handler/sqlite` | ✅ | `-t/-d/-u`, transaction + rollback |
-| `csv-src/sink` | — | stub | |
+| `csv-src` | `handler/csv` | ✅ | multi-file, `-u` numbers, `-s` headers, gunzip |
+| `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
 | others | — | stub | pg, mysql, duckdb, yaml, xlsx, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
@@ -117,18 +120,19 @@ cmd/swl/                 CLI entry (Kong)
 internal/
   coll/                  Collection, Row, Stream
   stream/                Concat, MapRows, TeeRows, Of, Empty, CheckContext
-  runner/                Run, ConsumeHooks
-  handlers/              Source, Transform, Sink interfaces
+  runner/                Run
+  handlers/              Source, Transform, Sink interfaces, ConsumeHooks
   pipeline/              Parse, stageTarget, resolveHandler
-  cli/                   ExpandFlags, BuildParser, ParseArgs, BaseOpts
+  cli/                   ExpandFlags, BuildParser, ParseArgs, ParseArgsNoExpand
   debug/                 Default stderr sink (colored when TTY)
   style/                 ANSI colors for CLI (NO_COLOR / non-TTY safe)
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
+testdata/csv/            CSV fixture files
 ```
 
 ---
@@ -138,11 +142,12 @@ testdata/json/           JSON fixture files
 | Package | Use |
 |---------|-----|
 | `github.com/alecthomas/kong` | Global CLI |
-| `github.com/alecthomas/participle/v2` | Handler argv |
+| `github.com/alecthomas/participle/v2` | Handler argv (where used) |
 | `github.com/samber/oops` | Error stacks |
 | `github.com/aeolun/json5` | JSON5 source read |
 | `github.com/fatih/color` | Terminal colors (`internal/style`) |
 | `modernc.org/sqlite` | SQLite driver (pure Go) |
+| `golang.org/x/text` | CSV header normalization (NFD) |
 
 ---
 
@@ -155,17 +160,17 @@ make test
 
 | Location | Covers |
 |----------|--------|
-| `internal/stream`, `cli`, `pipeline`, `errs` | Unit |
-| `handler/json`, `handler/sqlite`, `handler/registry` | JSON, SQLite, aliases |
+| `internal/stream`, `cli`, `pipeline`, `errs`, `handlers` | Unit |
+| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/registry` | Handlers |
 | `test/swltest` | Pipeline integration (mem source, flatten) |
 
 ---
 
 ## Next work
 
-1. **CSV** — `handler/csv/`
-2. **sonic sink** — when compatible with Go 1.26
-3. **SSH** — `internal/ssh/tunnel.go`
+1. **SSH** — `internal/ssh/tunnel.go`
+2. **PG / mysql** — database handlers
+3. **sonic sink** — when compatible with Go 1.26
 4. **Polish** — per-handler help, golden vs swl2
 
 ---
@@ -174,11 +179,11 @@ make test
 
 - `BaseOpts` (`-p`, `-a`, `-v`) parsed but not fully merged into `runner.Config`
 - Global `-p` passthrough only on transform path in runner
+- CSV sink default delimiter is `;` (swl2 parity); source default is `,`
 - Multi-collection single-file json sink (non-`-o`) emits concatenated arrays (swl2 parity)
-- Collection name from path: basename without extension (e.g. `dir/foo.json` → `foo`)
 
 ---
 
 ## swl2 reference
 
-TypeScript reference: [`swl2/`](swl2/) — do not port `optparse.ts` verbatim; use Participle grammars per handler.
+TypeScript reference: [`swl2/`](swl2/) — do not port `optparse.ts` verbatim; use Participle or manual grammars per handler.
