@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -89,6 +90,39 @@ func applyFixtures(t *testing.T, ctx context.Context, connStr string) {
 func fixturePath() string {
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..", "testdata", "pg", "fixtures.sql")
+}
+
+func complexTypesFixturePath() string {
+	_, file, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(file), "..", "..", "testdata", "pg", "complex_types.sql")
+}
+
+func applyComplexFixtures(t *testing.T, ctx context.Context, connStr string) {
+	t.Helper()
+	sqlBytes, err := os.ReadFile(complexTypesFixturePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, string(sqlBytes)); err != nil {
+		t.Fatalf("apply complex fixtures: %v", err)
+	}
+}
+
+func execSQL(t *testing.T, ctx context.Context, connStr, sql string) {
+	t.Helper()
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, sql); err != nil {
+		t.Fatalf("exec sql: %v", err)
+	}
 }
 
 func collectSource(t *testing.T, uri string, tail ...string) []swltest.Snapshot {
@@ -194,6 +228,101 @@ func TestIntegrationSourceSchemaWildcard(t *testing.T) {
 	}
 }
 
+func TestIntegrationSourceComplexTypes(t *testing.T) {
+	uri := startPostgres(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	applyComplexFixtures(t, ctx, uri)
+
+	snaps := collectSource(t, uri, "-s", "complex", "complex.documents")
+	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
+		t.Fatalf("got %+v", snaps)
+	}
+	row := snaps[0].Rows[0]
+
+	tags, ok := row["tags"].([]any)
+	if !ok {
+		t.Fatalf("tags type %T", row["tags"])
+	}
+	if !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
+		t.Fatalf("tags %+v", tags)
+	}
+
+	payload, ok := row["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload type %T", row["payload"])
+	}
+	users, ok := payload["users"].([]any)
+	if !ok || len(users) != 1 {
+		t.Fatalf("users %+v", payload["users"])
+	}
+	user0, ok := users[0].(map[string]any)
+	if !ok {
+		t.Fatalf("user0 type %T", users[0])
+	}
+	profile, ok := user0["profile"].(map[string]any)
+	if !ok || profile["active"] != true {
+		t.Fatalf("profile %+v", user0["profile"])
+	}
+	userTags, ok := user0["tags"].([]any)
+	if !ok || len(userTags) != 2 {
+		t.Fatalf("user tags %+v", user0["tags"])
+	}
+
+	meta, ok := payload["meta"].(map[string]any)
+	if !ok {
+		t.Fatalf("meta type %T", payload["meta"])
+	}
+	nested, ok := meta["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested type %T", meta["nested"])
+	}
+	labels, ok := nested["labels"].([]any)
+	if !ok || !reflect.DeepEqual(labels, []any{"x", "y"}) {
+		t.Fatalf("labels %+v", nested["labels"])
+	}
+}
+
+func TestIntegrationSinkComplexTypesRoundTrip(t *testing.T) {
+	uri := startPostgres(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	applyComplexFixtures(t, ctx, uri)
+	execSQL(t, ctx, uri, `
+		DROP TABLE IF EXISTS complex.documents_copy;
+		CREATE TABLE complex.documents_copy (
+			id serial PRIMARY KEY,
+			tags text[] NOT NULL,
+			payload jsonb NOT NULL
+		)`)
+
+	srcSnaps := collectSource(t, uri, "-s", "complex", "complex.documents")
+	in := renameCollectionStream(snapshotsToStream(srcSnaps), "complex.documents", "complex.documents_copy")
+
+	sinkOpts, err := pg.ParseSinkOptions(uri, []string{"-s", "complex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := pg.Sink{}
+	if err := sink.Sink(ctx, handlersConfig(), in, sinkOpts); err != nil {
+		t.Fatal(err)
+	}
+
+	mirrorSnaps := collectSource(t, uri, "-s", "complex", "complex.documents_copy")
+	if len(mirrorSnaps) != 1 || len(mirrorSnaps[0].Rows) != 1 {
+		t.Fatalf("mirror %+v", mirrorSnaps)
+	}
+
+	want := srcSnaps[0].Rows[0]
+	got := mirrorSnaps[0].Rows[0]
+	if !reflect.DeepEqual(got["tags"], want["tags"]) {
+		t.Fatalf("tags mirror=%#v src=%#v", got["tags"], want["tags"])
+	}
+	if !reflect.DeepEqual(got["payload"], want["payload"]) {
+		t.Fatalf("payload mirror=%#v src=%#v", got["payload"], want["payload"])
+	}
+}
+
 func TestIntegrationSinkRoundTrip(t *testing.T) {
 	uri := startPostgres(t)
 	ctx := context.Background()
@@ -228,6 +357,23 @@ func snapshotsToStream(snaps []swltest.Snapshot) coll.Stream {
 			c := coll.Collection{
 				Name: s.Name,
 				Rows: coll.SliceRows(rows),
+			}
+			if !yield(c, nil) {
+				return
+			}
+		}
+	}
+}
+
+func renameCollectionStream(in coll.Stream, from, to string) coll.Stream {
+	return func(yield func(coll.Collection, error) bool) {
+		for c, err := range in {
+			if err != nil {
+				yield(coll.Collection{}, err)
+				return
+			}
+			if c.Name == from {
+				c.Name = to
 			}
 			if !yield(c, nil) {
 				return

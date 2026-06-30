@@ -187,7 +187,7 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 | `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/parquet`, `handler/duckdb`, `handler/flatten`, `handler/registry` | Handlers |
 | `handler/help_test.go`, `internal/pipeline/parse_test.go` | `--help`, `+handler`, `::` syntax |
 | `handler/pg` (integration) | testcontainers Postgres, FK schema order, sink round-trip |
-| `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg` | Committed fixtures |
+| `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg` | Committed fixtures (`pg/complex_types.sql`: `text[]`, nested `jsonb`) |
 | `test/swltest` | End-to-end pipelines (flatten, xlsx→sqlite, json→parquet, parquet shards) |
 
 ---
