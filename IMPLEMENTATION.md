@@ -122,7 +122,7 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `csv-src` | `handler/csv` | ✅ | multi-file, `-u` numbers, `-s` headers, gunzip |
 | `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
 | `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, `-s` schema FK order, `-q`, `.*` wildcard |
-| `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
+| `pg-sink` | `handler/pg` | ✅ | COPY + `json_populate_record`, hstore transform, upsert CTE, sequence reset |
 | `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsm via excelize, **xlsb via go-xlsb**, ods via knieriem/odf; sheets, `-r/-e/-i` |
 | `xlsx-sink` | `handler/xlsx` | ✅ | one sheet per collection, merges into existing workbook, `-u` (no-op) |
 | `parquet-src` | `handler/parquet` | ✅ | multi-file, `-c` columns; merges GCS archive shards (`orders-0000001.pqt` → `orders`) |
@@ -221,7 +221,6 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg/mysql tests.
 
 - `BaseOpts` (`-p`, `-a`, `-v`) parsed but not fully merged into `runner.Config`
 - Global `-p` passthrough only on transform path in runner
-- PG sink uses INSERT + ON CONFLICT (not swl2 COPY/json_populate_record yet)
 - CSV sink default delimiter is `;` (swl2 parity); source default is `,`
 - SSH tunnel uses `InsecureIgnoreHostKey` (match swl2/node-ssh; use known_hosts for production)
 - Legacy `.xls` (BIFF) not supported; use `.xlsx` or `.xlsb`

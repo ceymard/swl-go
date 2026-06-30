@@ -2,6 +2,7 @@ package pg_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -320,6 +321,82 @@ func TestIntegrationSinkComplexTypesRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got["payload"], want["payload"]) {
 		t.Fatalf("payload mirror=%#v src=%#v", got["payload"], want["payload"])
+	}
+}
+
+func TestIntegrationSinkTextualJSONCoercion(t *testing.T) {
+	uri := startPostgres(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	execSQL(t, ctx, uri, `DROP TABLE IF EXISTS typed_rows`)
+	execSQL(t, ctx, uri, `CREATE TABLE typed_rows (
+		id INT NOT NULL,
+		note TEXT NOT NULL,
+		payload JSONB NOT NULL
+	)`)
+
+	stream := func(yield func(coll.Collection, error) bool) {
+		rows := func(yieldRow func(coll.Row, error) bool) {
+			yieldRow(coll.Row{
+				"id":      "42",
+				"note":    "hello",
+				"payload": `{"nested":{"ok":true,"labels":["x","y"]}}`,
+			}, nil)
+		}
+		yield(coll.Collection{Name: "typed_rows", Rows: rows}, nil)
+	}
+
+	sinkOpts, err := pg.ParseSinkOptions(uri, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := pg.Sink{}
+	if err := sink.Sink(ctx, handlersConfig(), stream, sinkOpts); err != nil {
+		t.Fatal(err)
+	}
+
+	snaps := collectSource(t, uri, "typed_rows")
+	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
+		t.Fatalf("got %+v", snaps)
+	}
+	row := snaps[0].Rows[0]
+	switch id := row["id"].(type) {
+	case int32:
+		if id != 42 {
+			t.Fatalf("id %v", id)
+		}
+	case int64:
+		if id != 42 {
+			t.Fatalf("id %v", id)
+		}
+	default:
+		t.Fatalf("id type %T val %v", row["id"], row["id"])
+	}
+	payload := row["payload"]
+	var nested map[string]any
+	switch p := payload.(type) {
+	case map[string]any:
+		var ok bool
+		nested, ok = p["nested"].(map[string]any)
+		if !ok {
+			t.Fatalf("nested %+v", p["nested"])
+		}
+	case string:
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(p), &doc); err != nil {
+			t.Fatalf("payload json: %v", err)
+		}
+		var ok bool
+		nested, ok = doc["nested"].(map[string]any)
+		if !ok {
+			t.Fatalf("nested %+v", doc["nested"])
+		}
+	default:
+		t.Fatalf("payload type %T", payload)
+	}
+	if nested["ok"] != true {
+		t.Fatalf("nested %+v", nested)
 	}
 }
 

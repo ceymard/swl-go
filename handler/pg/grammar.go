@@ -71,6 +71,7 @@ type SinkOpts struct {
 	DisableTriggers   bool
 	Notice            bool
 	IgnoreNonExisting bool
+	DropIndexes       bool
 	Collections       map[string]colSinkOpts
 	cli.BaseOpts
 }
@@ -130,6 +131,7 @@ func ParseSinkOptions(target string, tail []string) (any, error) {
 		DisableTriggers:   optparse.Bool(m, "disable_triggers"),
 		Notice:            optparse.Bool(m, "notice"),
 		IgnoreNonExisting: optparse.Bool(m, "ignore_nonexisting"),
+		DropIndexes:       optparse.Bool(m, "drop_indexes"),
 		BaseOpts:          cli.BaseOptsFrom(m),
 		Collections:       map[string]colSinkOpts{},
 	}

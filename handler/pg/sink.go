@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -85,12 +84,11 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 				return nil, errs.Wrap(err, "drop table", "table", col.Name)
 			}
 		}
-		cols := columnNames(firstRow)
 		if effective.AutoCreate {
 			if h.cfg.Messages != nil {
 				h.cfg.Messages.Log(1, "creating", col.Name)
 			}
-			if _, err := h.tx.Exec(ctx, buildCreateTable(fqTable, cols)); err != nil {
+			if _, err := h.tx.Exec(ctx, buildCreateTable(fqTable, columnNames(firstRow))); err != nil {
 				return nil, errs.Wrap(err, "create table", "table", col.Name)
 			}
 		}
@@ -105,9 +103,32 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		h.seen[col.Name] = true
 	}
 
+	if h.opts.IgnoreNonExisting {
+		var exists bool
+		err := h.tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.tables
+				WHERE table_schema = $1 AND table_name = $2
+			)`, schema, table).Scan(&exists)
+		if err != nil {
+			return nil, errs.Wrap(err, "check table exists", "table", col.Name)
+		}
+		if !exists {
+			if h.cfg.Messages != nil {
+				h.cfg.Messages.Log(1, "ignoring non-existing table", col.Name)
+			}
+			return &noopWriter{}, nil
+		}
+	}
+
+	hstoreCols, err := listHstoreColumns(ctx, h.tx, schema, table)
+	if err != nil {
+		return nil, err
+	}
+
 	cols := columnNames(firstRow)
-	tempTable := fmt.Sprintf("swl_temp_%d", h.seq.Add(1))
-	if _, err := h.tx.Exec(ctx, fmt.Sprintf(`CREATE TEMP TABLE %s (jsondata json) ON COMMIT DROP`, tempTable)); err != nil {
+	tempTable := tempTableName(col.Name)
+	if _, err := h.tx.Exec(ctx, fmt.Sprintf(`CREATE TEMP TABLE %s (jsondata json)`, tempTable)); err != nil {
 		return nil, errs.Wrap(err, "create temp copy table", "table", col.Name)
 	}
 
@@ -120,18 +141,30 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		copyDone <- err
 	}()
 
+	droppedIndexes, err := droppedIndexesForTable(ctx, h.tx, h.cfg, effective, schema, table)
+	if err != nil {
+		_ = pw.Close()
+		<-copyDone
+		return nil, err
+	}
+
 	w := &copyWriter{
-		ctx:       ctx,
-		tx:        h.tx,
-		cfg:       h.cfg,
-		cols:      cols,
-		fqTable:   fqTable,
-		table:     col.Name,
-		tempTable: tempTable,
-		colOpts:   effective,
-		global:    h.opts,
-		pw:        pw,
-		copyDone:  copyDone,
+		ctx:            ctx,
+		tx:             h.tx,
+		cfg:            h.cfg,
+		cols:           cols,
+		fqTable:        fqTable,
+		rowType:        tableRowTypeRef(col.Name, h.opts.Schema),
+		table:          col.Name,
+		schema:         schema,
+		tableName:      table,
+		tempTable:      tempTable,
+		colOpts:        effective,
+		global:         h.opts,
+		hstoreCols:     hstoreCols,
+		droppedIndexes: droppedIndexes,
+		pw:             pw,
+		copyDone:       copyDone,
 	}
 	if err := w.writeRow(firstRow); err != nil {
 		_ = pw.Close()
@@ -163,6 +196,13 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 		}
 	}
 	if h.pool != nil {
+		if _, err := h.pool.Exec(ctx, `ANALYZE`); err != nil {
+			h.pool.Close()
+			if h.tun != nil {
+				_ = h.tun.Close()
+			}
+			return errs.Wrap(err, "postgres analyze")
+		}
 		h.pool.Close()
 	}
 	if h.tun != nil {
@@ -174,19 +214,29 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 	return nil
 }
 
+type noopWriter struct{}
+
+func (noopWriter) Write(coll.Row) error { return nil }
+func (noopWriter) Close() error         { return nil }
+
 type copyWriter struct {
-	ctx       context.Context
-	tx        pgx.Tx
-	cfg       handlers.Config
-	cols      []string
-	fqTable   string
-	table     string
-	tempTable string
-	colOpts   colSinkOpts
-	global    SinkOpts
-	pw        *io.PipeWriter
-	copyDone  chan error
-	closed    bool
+	ctx            context.Context
+	tx             pgx.Tx
+	cfg            handlers.Config
+	cols           []string
+	fqTable        string
+	rowType        string
+	table          string
+	schema         string
+	tableName      string
+	tempTable      string
+	colOpts        colSinkOpts
+	global         SinkOpts
+	hstoreCols     []string
+	droppedIndexes []pgIndex
+	pw             *io.PipeWriter
+	copyDone       chan error
+	closed         bool
 }
 
 func (w *copyWriter) Write(row coll.Row) error {
@@ -212,10 +262,18 @@ func (w *copyWriter) Close() error {
 	if err := w.flushToTable(); err != nil {
 		return err
 	}
+	if _, err := w.tx.Exec(w.ctx, fmt.Sprintf(`DROP TABLE %s`, w.tempTable)); err != nil {
+		return errs.Wrap(err, "drop temp copy table", "table", w.table)
+	}
+	if err := recreateIndexes(w.ctx, w.tx, w.cfg, w.droppedIndexes); err != nil {
+		return err
+	}
+	if err := resetTableSequences(w.ctx, w.tx, w.cfg, w.table, w.schema, w.tableName); err != nil {
+		return err
+	}
 	if w.cfg.Messages != nil && w.cfg.Verbose >= 2 {
-		schema, table := qualifyTable(w.table, w.global.Schema)
 		var n int64
-		q := fmt.Sprintf(`SELECT count(*) FROM "%s"."%s"`, schema, table)
+		q := fmt.Sprintf(`SELECT count(*) FROM %s`, w.fqTable)
 		if err := w.tx.QueryRow(w.ctx, q).Scan(&n); err == nil {
 			w.cfg.Messages.Log(2, "table", w.table, "now has", n, "rows")
 		}
@@ -224,6 +282,7 @@ func (w *copyWriter) Close() error {
 }
 
 func (w *copyWriter) writeRow(row coll.Row) error {
+	row = transformHstoreColumns(row, w.hstoreCols)
 	payload, err := copyLine(row)
 	if err != nil {
 		return err
@@ -261,15 +320,35 @@ func (w *copyWriter) flushToTable() error {
 	}
 
 	sql := fmt.Sprintf(`
-		INSERT INTO %s (%s)
-		SELECT %s
-		FROM %s T,
-			json_populate_record(null::%s, T.jsondata) R
-		%s`, w.fqTable, strings.Join(quoted, ", "), strings.Join(selectCols, ", "),
-		w.tempTable, w.fqTable, upsert)
+		WITH upsert AS (
+			INSERT INTO %s (%s)
+			SELECT %s
+			FROM %s T,
+				json_populate_record(null::%s, T.jsondata) R
+			%s
+			RETURNING (xmax = 0) AS inserted
+		)
+		SELECT
+			COUNT(*) FILTER (WHERE inserted) AS num_inserted,
+			COUNT(*) FILTER (WHERE NOT inserted) AS num_updated
+		FROM upsert`,
+		w.fqTable, strings.Join(quoted, ", "), strings.Join(selectCols, ", "),
+		w.tempTable, w.rowType, upsert)
 
-	if _, err := w.tx.Exec(w.ctx, sql); err != nil {
+	if w.cfg.Messages != nil {
+		w.cfg.Messages.Log(3, sql)
+	}
+
+	var inserted, updated int64
+	if err := w.tx.QueryRow(w.ctx, sql).Scan(&inserted, &updated); err != nil {
 		return errs.Wrap(err, "insert from copy temp", "table", w.table)
+	}
+	if w.cfg.Messages != nil {
+		if w.colOpts.Upsert || w.global.Upsert {
+			w.cfg.Messages.Log(1, w.table, inserted, "rows inserted,", updated, "rows updated")
+		} else {
+			w.cfg.Messages.Log(1, w.table, inserted, "rows inserted")
+		}
 	}
 	return nil
 }
@@ -319,10 +398,17 @@ func (w *copyWriter) runUpdate() error {
 			SELECT json_populate_record(null::%s, T.jsondata) AS rec
 			FROM %s T
 		) T
-		WHERE %s`, w.fqTable, strings.Join(setParts, ", "), w.fqTable, w.tempTable, strings.Join(whereParts, " AND "))
+		WHERE %s`, w.fqTable, strings.Join(setParts, ", "), w.rowType, w.tempTable, strings.Join(whereParts, " AND "))
 
-	if _, err := w.tx.Exec(w.ctx, sql); err != nil {
+	if w.cfg.Messages != nil {
+		w.cfg.Messages.Log(3, sql)
+	}
+	tag, err := w.tx.Exec(w.ctx, sql)
+	if err != nil {
 		return errs.Wrap(err, "update from copy temp", "table", w.table)
+	}
+	if w.cfg.Messages != nil {
+		w.cfg.Messages.Log(1, w.table, tag.RowsAffected(), "rows updated")
 	}
 	return nil
 }
@@ -354,6 +440,131 @@ func (w *copyWriter) buildUpsertClause() (string, error) {
 		constraint, strings.Join(setParts, ", ")), nil
 }
 
+func listHstoreColumns(ctx context.Context, tx pgx.Tx, schema, table string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2 AND udt_name = 'hstore'
+		ORDER BY ordinal_position`, schema, table)
+	if err != nil {
+		return nil, errs.Wrap(err, "list hstore columns", "table", schema+"."+table)
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, errs.Wrap(err, "scan hstore column")
+		}
+		cols = append(cols, name)
+	}
+	return cols, rows.Err()
+}
+
+func droppedIndexesForTable(ctx context.Context, tx pgx.Tx, cfg handlers.Config, opts colSinkOpts, schema, table string) ([]pgIndex, error) {
+	if !opts.DropIndexes {
+		return nil, nil
+	}
+	return dropTableIndexes(ctx, tx, cfg, schema, table)
+}
+
+func dropTableIndexes(ctx context.Context, tx pgx.Tx, cfg handlers.Config, schema, table string) ([]pgIndex, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT schemaname, indexname, indexdef
+		FROM pg_indexes
+		WHERE tablename = $1 AND schemaname = $2`, table, schema)
+	if err != nil {
+		return nil, errs.Wrap(err, "list indexes", "table", schema+"."+table)
+	}
+	defer rows.Close()
+	var indices []pgIndex
+	for rows.Next() {
+		var idx pgIndex
+		if err := rows.Scan(&idx.Schema, &idx.Name, &idx.Def); err != nil {
+			return nil, errs.Wrap(err, "scan index")
+		}
+		indices = append(indices, idx)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, idx := range indices {
+		if cfg.Messages != nil {
+			cfg.Messages.Log(1, "dropping index", idx.Name)
+		}
+		stmt := fmt.Sprintf(`DROP INDEX "%s"."%s"`, idx.Schema, idx.Name)
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return nil, errs.Wrap(err, "drop index", "index", idx.Name)
+		}
+	}
+	return indices, nil
+}
+
+func recreateIndexes(ctx context.Context, tx pgx.Tx, cfg handlers.Config, indices []pgIndex) error {
+	for _, idx := range indices {
+		if cfg.Messages != nil {
+			cfg.Messages.Log(1, "recreating index", idx.Name)
+		}
+		if _, err := tx.Exec(ctx, idx.Def); err != nil {
+			return errs.Wrap(err, "recreate index", "index", idx.Name)
+		}
+	}
+	return nil
+}
+
+func resetTableSequences(ctx context.Context, tx pgx.Tx, cfg handlers.Config, fqCollection, schema, table string) error {
+	rows, err := tx.Query(ctx, `
+		SELECT column_name,
+			CASE WHEN is_identity = 'YES' THEN pg_get_serial_sequence(format('%I.%I', $1::text, $2::text), column_name)
+				ELSE regexp_replace(regexp_replace(column_default, '[^'']+''', ''), '''.*', '')
+			END AS seq
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2
+		  AND (column_default LIKE '%nextval(%' OR is_identity = 'YES')`, schema, table)
+	if err != nil {
+		return errs.Wrap(err, "list sequences", "table", fqCollection)
+	}
+	defer rows.Close()
+
+	type seqInfo struct {
+		column string
+		seq    string
+	}
+	var seqs []seqInfo
+	for rows.Next() {
+		var s seqInfo
+		if err := rows.Scan(&s.column, &s.seq); err != nil {
+			return errs.Wrap(err, "scan sequence")
+		}
+		if s.seq != "" {
+			seqs = append(seqs, s)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, s := range seqs {
+		if cfg.Messages != nil {
+			cfg.Messages.Log(2, "resetting sequence", s.seq)
+		}
+		sql := fmt.Sprintf(`
+			DO $$
+			DECLARE
+				themax INT;
+			BEGIN
+				LOCK TABLE %s IN EXCLUSIVE MODE;
+				SELECT MAX("%s") INTO themax FROM %s;
+				PERFORM setval('%s', COALESCE(themax + 1, 1), false);
+			END
+			$$ LANGUAGE plpgsql`, `"`+schema+`"."`+table+`"`, s.column, `"`+schema+`"."`+table+`"`, s.seq)
+		if _, err := tx.Exec(ctx, sql); err != nil {
+			return errs.Wrap(err, "reset sequence", "sequence", s.seq)
+		}
+	}
+	return nil
+}
+
 func mergeColOpts(global SinkOpts, col colSinkOpts) colSinkOpts {
 	out := col
 	if global.Truncate {
@@ -374,48 +585,8 @@ func mergeColOpts(global SinkOpts, col colSinkOpts) colSinkOpts {
 	if global.DoNothing {
 		out.DoNothing = true
 	}
-	return out
-}
-
-func buildCreateTable(fqTable string, cols []string) string {
-	parts := make([]string, len(cols))
-	for i, c := range cols {
-		parts[i] = fmt.Sprintf(`"%s" text`, c)
-	}
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)`, fqTable, strings.Join(parts, ", "))
-}
-
-func columnNames(row coll.Row) []string {
-	names := make([]string, 0, len(row))
-	for k := range row {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
-}
-
-func quoteColumns(cols []string) []string {
-	out := make([]string, len(cols))
-	for i, c := range cols {
-		out[i] = `"` + c + `"`
+	if global.DropIndexes {
+		out.DropIndexes = true
 	}
 	return out
-}
-
-func containsString(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
-func parseFQTable(fqTable string) (schema, table string) {
-	clean := strings.ReplaceAll(fqTable, `"`, "")
-	parts := strings.Split(clean, ".")
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return "public", clean
 }
