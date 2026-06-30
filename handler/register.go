@@ -4,6 +4,7 @@ import (
 	"github.com/ceymard/swl-go/handler/coerce"
 	"github.com/ceymard/swl-go/handler/flatten"
 	"github.com/ceymard/swl-go/handler/json"
+	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/handler/unflatten"
 )
 
@@ -27,6 +28,12 @@ func init() {
 	Register("json-sink", json.Sink{}, Meta{})
 	RegisterParser("json-sink", json.ParseSinkOptions)
 
+	// SQLite source + sink (swl2 swl-sqlite-src/sink.ts).
+	Register("sqlite-src", sqlite.Source{}, Meta{})
+	RegisterParser("sqlite-src", sqlite.ParseSrcOptions)
+	Register("sqlite-sink", sqlite.Sink{}, Meta{})
+	RegisterParser("sqlite-sink", sqlite.ParseSinkOptions)
+
 	registerStubs()
 }
 
@@ -34,7 +41,6 @@ func init() {
 func registerStubs() {
 	stubs := []string{
 		"csv-src", "csv-sink",
-		"sqlite-src", "sqlite-sink",
 		"pg-src", "pg-sink", "my-src",
 		"duckdb-src", "duckdb-sink",
 		"xlsx-src", "xlsx-sink", "yaml-src", "yaml-sink",

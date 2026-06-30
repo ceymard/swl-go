@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — colored CLI output (debug rows, handler list).*
+*Last updated: 2026-06-30 — SQLite source/sink implemented.*
 
 ---
 
@@ -14,7 +14,8 @@
 | CLI (Kong + pipeline parse + empty handler list + **colors**) | ✅ Done |
 | Transforms (flatten, unflatten, coerce, uncoerce) | ✅ Done |
 | JSON source + sink | ✅ Done |
-| CSV, SQLite, PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
+| SQLite source + sink | ✅ Done |
+| CSV, PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
 | SSH tunnels | ⏳ Not started |
 | sonic JSON writer | ⏳ Deferred (Go 1.26 + sonic incompatibility; using `encoding/json`) |
 
@@ -50,7 +51,7 @@ Collection.Rows = iter.Seq2[Row, error]     // Row = map[string]any
 | Sink | terminal consume |
 | (none) | `debug.Sink` |
 
-**Sink driver:** `runner.ConsumeHooks` — first row passed to `Open`, not `Write` (swl2 parity).
+**Sink driver:** `handlers.ConsumeHooks` — first row passed to `Open`, not `Write` (swl2 parity).
 
 ---
 
@@ -100,8 +101,9 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `uncoerce` | `handler/coerce` | ✅ | `-o/-e/-b/-t/-n` |
 | `json-src` | `handler/json` | ✅ | json5 read, inline `[`/`{`, `-c`/`-e` |
 | `json-sink` | `handler/json` | ✅ | file / dir / `%` paths, `-o` object mode |
+| `sqlite-src` | `handler/sqlite` | ✅ | auto tables, `-q` query per table |
+| `sqlite-sink` | `handler/sqlite` | ✅ | `-t/-d/-u`, transaction + rollback |
 | `csv-src/sink` | — | stub | |
-| `sqlite-src/sink` | — | stub | Next priority |
 | others | — | stub | pg, mysql, duckdb, yaml, xlsx, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
@@ -124,7 +126,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/
+  flatten/, coerce/, unflatten/, json/, sqlite/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 ```
@@ -140,6 +142,7 @@ testdata/json/           JSON fixture files
 | `github.com/samber/oops` | Error stacks |
 | `github.com/aeolun/json5` | JSON5 source read |
 | `github.com/fatih/color` | Terminal colors (`internal/style`) |
+| `modernc.org/sqlite` | SQLite driver (pure Go) |
 
 ---
 
@@ -153,18 +156,17 @@ make test
 | Location | Covers |
 |----------|--------|
 | `internal/stream`, `cli`, `pipeline`, `errs` | Unit |
-| `handler/json`, `handler/registry` | JSON + aliases |
+| `handler/json`, `handler/sqlite`, `handler/registry` | JSON, SQLite, aliases |
 | `test/swltest` | Pipeline integration (mem source, flatten) |
 
 ---
 
 ## Next work
 
-1. **SQLite** — `handler/sqlite/`, `ConsumeHooks`, participle table specs
-2. **CSV** — `handler/csv/`
-3. **sonic sink** — when compatible with Go 1.26
-4. **SSH** — `internal/ssh/tunnel.go`
-5. **Polish** — per-handler help, golden vs swl2
+1. **CSV** — `handler/csv/`
+2. **sonic sink** — when compatible with Go 1.26
+3. **SSH** — `internal/ssh/tunnel.go`
+4. **Polish** — per-handler help, golden vs swl2
 
 ---
 
