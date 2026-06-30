@@ -4,6 +4,7 @@ import (
 	"github.com/ceymard/swl-go/handler/coerce"
 	"github.com/ceymard/swl-go/handler/flatten"
 	"github.com/ceymard/swl-go/handler/csv"
+	"github.com/ceymard/swl-go/handler/duckdb"
 	"github.com/ceymard/swl-go/handler/json"
 	"github.com/ceymard/swl-go/handler/pg"
 	"github.com/ceymard/swl-go/handler/parquet"
@@ -77,6 +78,14 @@ func init() {
 	RegisterParser("parquet-sink", parquet.ParseSinkOptions)
 	RegisterOptParser("parquet-sink", parquet.SinkOptParser())
 
+	// DuckDB source + sink (swl2 swl-duckdb-src/sink.ts).
+	Register("duckdb-src", duckdb.Source{}, Meta{})
+	RegisterParser("duckdb-src", duckdb.ParseSrcOptions)
+	RegisterOptParser("duckdb-src", duckdb.SrcOptParser())
+	Register("duckdb-sink", duckdb.Sink{}, Meta{})
+	RegisterParser("duckdb-sink", duckdb.ParseSinkOptions)
+	RegisterOptParser("duckdb-sink", duckdb.SinkOptParser())
+
 	registerStubs()
 }
 
@@ -84,7 +93,6 @@ func init() {
 func registerStubs() {
 	stubs := []string{
 		"my-src",
-		"duckdb-src", "duckdb-sink",
 		"yaml-src", "yaml-sink",
 		"fn",
 	}
