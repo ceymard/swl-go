@@ -36,7 +36,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}
 
 	if cfg.Messages != nil {
-		cfg.Messages.Log(1, "connected to mssql", opts.URI)
+		cfg.Log(1, "connected to", cfg.ConnTarget(opts.URI))
 	}
 
 	return streamTables(ctx, cfg, db, tun, sources), nil
@@ -72,7 +72,7 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tun *ssh
 		for _, spec := range sources {
 			sqlText := querySQL(spec)
 			if cfg.Messages != nil {
-				cfg.Messages.Log(3, sqlText)
+				cfg.Log(3, sqlText)
 			}
 			c := coll.Collection{
 				Name: spec.Name,
@@ -81,9 +81,6 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tun *ssh
 			if !yield(c, nil) {
 				return
 			}
-		}
-		if cfg.Messages != nil {
-			cfg.Messages.Log(2, "finished sending mssql collections")
 		}
 	}
 }

@@ -48,7 +48,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 	}
 	h.tx = tx
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(1, "connected to mysql", h.opts.URI)
+		h.cfg.Log(1, "connected to", h.cfg.ConnTarget(h.opts.URI))
 	}
 	return nil
 }
@@ -60,8 +60,8 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if h.opts.Drop {
 		stmt := "DROP TABLE IF EXISTS " + quoteTable(table)
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "dropping table", table)
-			h.cfg.Messages.Log(3, stmt)
+			h.cfg.Log(2, "dropping table", table)
+			h.cfg.Log(3, stmt)
 		}
 		if _, err := h.tx.ExecContext(ctx, stmt); err != nil {
 			return nil, errs.Wrap(err, "drop table", "table", table)
@@ -71,7 +71,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if h.opts.AutoCreate || h.opts.Drop {
 		ddl := buildCreateTable(table, cols, firstRow)
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(3, ddl)
+			h.cfg.Log(3, ddl)
 		}
 		if _, err := h.tx.ExecContext(ctx, ddl); err != nil {
 			return nil, errs.Wrap(err, "create table", "table", table)
@@ -81,8 +81,8 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if h.opts.Truncate {
 		stmt := "TRUNCATE TABLE " + quoteTable(table)
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "truncating table", table)
-			h.cfg.Messages.Log(3, stmt)
+			h.cfg.Log(2, "truncating table", table)
+			h.cfg.Log(3, stmt)
 		}
 		if _, err := h.tx.ExecContext(ctx, stmt); err != nil {
 			return nil, errs.Wrap(err, "truncate table", "table", table)
@@ -113,7 +113,7 @@ func (h *sinkHooks) Rollback(ctx context.Context) {
 		_ = h.tun.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "rollbacked mysql transaction")
+		h.cfg.Log(2, "rollbacked mysql transaction")
 	}
 }
 
@@ -132,7 +132,7 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 		_ = h.tun.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "committed mysql changes")
+		h.cfg.Log(2, "committed mysql changes")
 	}
 	return nil
 }
@@ -154,13 +154,6 @@ func (w *batchWriter) Write(row coll.Row) error {
 func (w *batchWriter) Close() error {
 	if err := w.flush(); err != nil {
 		return err
-	}
-	if w.cfg.Messages != nil && w.cfg.Verbose >= 2 {
-		var n int64
-		q := "SELECT count(*) FROM " + quoteTable(w.table)
-		if err := w.tx.QueryRowContext(context.Background(), q).Scan(&n); err == nil {
-			w.cfg.Messages.Log(2, "table", w.table, "now has", n, "rows")
-		}
 	}
 	return nil
 }
@@ -218,7 +211,7 @@ func (w *batchWriter) flush() error {
 		stmt += " ON DUPLICATE KEY UPDATE " + strings.Join(updates, ", ")
 	}
 	if w.cfg.Messages != nil {
-		w.cfg.Messages.Log(3, stmt)
+		w.cfg.Log(3, stmt)
 	}
 	if _, err := w.tx.ExecContext(context.Background(), stmt, args...); err != nil {
 		return errs.Wrap(err, "insert batch", "table", w.table)

@@ -46,7 +46,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 	}
 	h.tx = tx
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "opened duckdb database", h.opts.File, "to write")
+		h.cfg.Log(2, "opened duckdb database", h.cfg.ConnTarget(h.opts.File), "to write")
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if schema != "main" {
 		stmt := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdent(schema))
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(3, stmt)
+			h.cfg.Log(3, stmt)
 		}
 		if _, err := h.tx.ExecContext(ctx, stmt); err != nil {
 			return nil, errs.Wrap(err, "create schema", "schema", schema)
@@ -68,8 +68,8 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if h.opts.Drop {
 		stmt := fmt.Sprintf(`DROP TABLE IF EXISTS %s.%s`, quoteIdent(schema), quoteIdent(table))
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "dropping table", col.Name)
-			h.cfg.Messages.Log(3, stmt)
+			h.cfg.Log(2, "dropping table", col.Name)
+			h.cfg.Log(3, stmt)
 		}
 		if _, err := h.tx.ExecContext(ctx, stmt); err != nil {
 			return nil, errs.Wrap(err, "drop table", "table", col.Name)
@@ -78,7 +78,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 
 	ddl := buildCreateTable(schema, table, cols, firstRow)
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(3, ddl)
+		h.cfg.Log(3, ddl)
 	}
 	if _, err := h.tx.ExecContext(ctx, ddl); err != nil {
 		return nil, errs.Wrap(err, "create table", "table", col.Name)
@@ -87,8 +87,8 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if h.opts.Truncate {
 		stmt := fmt.Sprintf(`DELETE FROM %s.%s`, quoteIdent(schema), quoteIdent(table))
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "truncating table", col.Name)
-			h.cfg.Messages.Log(3, stmt)
+			h.cfg.Log(2, "truncating table", col.Name)
+			h.cfg.Log(3, stmt)
 		}
 		if _, err := h.tx.ExecContext(ctx, stmt); err != nil {
 			return nil, errs.Wrap(err, "truncate table", "table", col.Name)
@@ -127,7 +127,7 @@ func (h *sinkHooks) Rollback(ctx context.Context) {
 		_ = h.db.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "rollbacked duckdb transaction")
+		h.cfg.Log(2, "rollbacked duckdb transaction")
 	}
 }
 
@@ -146,7 +146,7 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 		}
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "committed duckdb changes")
+		h.cfg.Log(2, "committed duckdb changes")
 	}
 	return nil
 }
@@ -193,21 +193,13 @@ func (w *collectionWriter) Close() error {
 		quoteStructType(w.structType),
 	)
 	if w.cfg.Messages != nil {
-		w.cfg.Messages.Log(3, stmt)
+		w.cfg.Log(3, stmt)
 	}
 	if _, err := w.tx.ExecContext(context.Background(), stmt); err != nil {
 		return errs.Wrap(err, "insert from json", "table", w.table)
 	}
 	if _, err := w.tx.ExecContext(context.Background(), `DROP TABLE __temp__json`); err != nil {
 		return errs.Wrap(err, "drop temp json table")
-	}
-
-	if w.cfg.Messages != nil && w.cfg.Verbose >= 2 {
-		var n int64
-		q := fmt.Sprintf(`SELECT count(*) FROM %s.%s`, quoteIdent(w.schema), quoteIdent(w.table))
-		if err := w.tx.QueryRowContext(context.Background(), q).Scan(&n); err == nil {
-			w.cfg.Messages.Log(2, "table", w.table, "now has", n, "rows")
-		}
 	}
 	return nil
 }

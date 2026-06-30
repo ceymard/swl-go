@@ -9,6 +9,7 @@ import (
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/handlers"
 	"github.com/ceymard/swl-go/internal/pipeline"
+	"github.com/ceymard/swl-go/internal/progress"
 	"github.com/ceymard/swl-go/internal/stream"
 )
 
@@ -36,13 +37,16 @@ func Run(cfg Config, reg handlers.Registry, p pipeline.Pipeline) error {
 			if !ok {
 				return errs.New("handler is not a source: " + stage.ID)
 			}
+			cfg.Progress = progress.NewHandler(cfg.Messages, progress.Source, stage.ID)
 			part, err := src.Source(cfg.Ctx, cfg, stage.Options)
 			if err != nil {
 				return errs.Wrap(err, "source "+stage.ID, "handler", stage.ID)
 			}
+			part = progress.Track(cfg.Messages, progress.Source, part)
 			s = stream.Concat(s, stream.CheckContext(cfg.Ctx, part))
 
 		case pipeline.StageTransform:
+			cfg.Progress = nil
 			tf, ok := h.(handlers.Transform)
 			if !ok {
 				return errs.New("handler is not a transform: " + stage.ID)
@@ -64,7 +68,9 @@ func Run(cfg Config, reg handlers.Registry, p pipeline.Pipeline) error {
 			if !ok {
 				return errs.New("handler is not a sink: " + stage.ID)
 			}
-			return sn.Sink(cfg.Ctx, cfg, s, stage.Options)
+			cfg.Progress = progress.NewHandler(cfg.Messages, progress.Sink, stage.ID)
+			in := progress.Track(cfg.Messages, progress.Sink, s)
+			return sn.Sink(cfg.Ctx, cfg, in, stage.Options)
 		}
 	}
 	return debug.Sink(cfg.Verbose, s)

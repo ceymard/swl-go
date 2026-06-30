@@ -9,14 +9,35 @@ import (
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/msg"
+	"github.com/ceymard/swl-go/internal/progress"
 )
 
 // Config is passed to every handler. Messages go to stderr, not through the stream.
 type Config struct {
 	Ctx         context.Context
 	Messages    *msg.Log
+	Progress    *progress.Handler // set by runner for source/sink stages
 	Verbose     int
 	Passthrough bool // -p: tee rows to debug while processing
+}
+
+// Log writes handler diagnostics with role-colored prefix when Progress is set.
+func (cfg Config) Log(level int, args ...any) {
+	if cfg.Progress != nil {
+		cfg.Progress.Log(level, args...)
+		return
+	}
+	if cfg.Messages != nil {
+		cfg.Messages.Log(level, args...)
+	}
+}
+
+// ConnTarget returns a URI or path highlighted for the current source/sink role.
+func (cfg Config) ConnTarget(s string) string {
+	if cfg.Progress != nil {
+		return cfg.Progress.Highlight(s)
+	}
+	return s
 }
 
 // Source emits a stream of collections (file read, DB query, …).

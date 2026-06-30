@@ -49,7 +49,7 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 			return errs.Wrap(err, "create parquet directory", "path", outPath)
 		}
 		if cfg.Messages != nil {
-			cfg.Messages.Log(2, "writing", outPath)
+			cfg.Log(2, "writing", outPath)
 		}
 		if err := writeParquetFile(outPath, rows); err != nil {
 			return errs.Wrap(err, "write parquet", "path", outPath)

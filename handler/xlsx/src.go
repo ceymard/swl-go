@@ -50,7 +50,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 			emitName := collectionName(spec)
 			if len(rows) == 0 {
 				if cfg.Messages != nil {
-					cfg.Messages.Log(2, fmt.Sprintf("%s was empty, nothing emitted", emitName))
+					cfg.Log(2, fmt.Sprintf("%s was empty, nothing emitted", emitName))
 				}
 				continue
 			}

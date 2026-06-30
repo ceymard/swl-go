@@ -37,7 +37,7 @@ func (h *sinkHooks) Init(ctx context.Context) error { return nil }
 func (h *sinkHooks) Rollback(ctx context.Context)   {}
 func (h *sinkHooks) Finish(ctx context.Context) error {
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "Finished csv sink")
+		h.cfg.Log(2, "Finished csv sink")
 	}
 	return nil
 }
@@ -55,7 +55,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		return nil, errs.Wrap(err, "create csv file", "path", path)
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "opening", path, "for writing")
+		h.cfg.Log(2, "opening", path, "for writing")
 	}
 
 	w := csv.NewWriter(f)

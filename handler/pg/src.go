@@ -44,7 +44,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}
 
 	if cfg.Messages != nil {
-		cfg.Messages.Log(1, "connected to postgres", opts.URI)
+		cfg.Log(1, "connected to", cfg.ConnTarget(opts.URI))
 	}
 
 	return streamQueries(ctx, cfg, pool, tun, sources), nil
@@ -66,9 +66,6 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 			if !yield(c, nil) {
 				return
 			}
-		}
-		if cfg.Messages != nil {
-			cfg.Messages.Log(2, "finished sending postgres collections")
 		}
 	}
 }

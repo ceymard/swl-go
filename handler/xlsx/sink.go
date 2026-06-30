@@ -35,7 +35,7 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 	}
 	defer f.Close()
 	if existed && cfg.Messages != nil {
-		cfg.Messages.Log(2, "opened existing file")
+		cfg.Log(2, "opened existing file")
 	}
 
 	for c, err := range in {

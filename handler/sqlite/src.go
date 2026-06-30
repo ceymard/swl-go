@@ -36,7 +36,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}
 
 	if cfg.Messages != nil {
-		cfg.Messages.Log(2, "opened sqlite database", opts.File, "to read")
+		cfg.Log(2, "opened sqlite database", cfg.ConnTarget(opts.File), "to read")
 	}
 
 	return streamTables(ctx, cfg, db, tables), nil
@@ -78,9 +78,6 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tables [
 			if !yield(c, nil) {
 				return
 			}
-		}
-		if cfg.Messages != nil {
-			cfg.Messages.Log(2, "finished sending sqlite collections")
 		}
 	}
 }

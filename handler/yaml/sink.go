@@ -82,7 +82,7 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 	}
 
 	if cfg.Messages != nil {
-		cfg.Messages.Log(2, "Finished yaml sink")
+		cfg.Log(2, "Finished yaml sink")
 	}
 	return nil
 }

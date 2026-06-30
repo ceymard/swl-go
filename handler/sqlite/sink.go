@@ -51,7 +51,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 	}
 	h.tx = tx
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "opened sqlite database", h.opts.File, "to write")
+		h.cfg.Log(2, "opened sqlite database", h.cfg.ConnTarget(h.opts.File), "to write")
 	}
 	return nil
 }
@@ -62,7 +62,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 
 	if h.opts.Drop {
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "dropping table", table)
+			h.cfg.Log(2, "dropping table", table)
 		}
 		if _, err := h.tx.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, table)); err != nil {
 			return nil, errs.Wrap(err, "drop table", "table", table)
@@ -76,7 +76,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 
 	if h.opts.Truncate {
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(2, "truncating table", table)
+			h.cfg.Log(2, "truncating table", table)
 		}
 		if _, err := h.tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM "%s"`, table)); err != nil {
 			return nil, errs.Wrap(err, "truncate table", "table", table)
@@ -112,7 +112,7 @@ func (h *sinkHooks) Rollback(ctx context.Context) {
 		_ = h.db.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "rollbacked sqlite transaction")
+		h.cfg.Log(2, "rollbacked sqlite transaction")
 	}
 }
 
@@ -129,7 +129,7 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 		}
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "committed sqlite changes")
+		h.cfg.Log(2, "committed sqlite changes")
 	}
 	return nil
 }
@@ -148,13 +148,6 @@ func (w *rowWriter) Write(row coll.Row) error {
 }
 
 func (w *rowWriter) Close() error {
-	if w.cfg.Messages != nil && w.cfg.Verbose >= 2 && w.tx != nil {
-		var n int64
-		q := fmt.Sprintf(`SELECT count(*) FROM "%s"`, w.table)
-		if err := w.tx.QueryRowContext(context.Background(), q).Scan(&n); err == nil {
-			w.cfg.Messages.Log(2, "table", w.table, "now has", n, "rows")
-		}
-	}
 	if err := w.stmt.Close(); err != nil {
 		return errs.Wrap(err, "close insert stmt", "table", w.table)
 	}

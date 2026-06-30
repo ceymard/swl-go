@@ -56,14 +56,14 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 
 	if h.opts.DisableTriggers {
 		if h.cfg.Messages != nil {
-			h.cfg.Messages.Log(1, "disabling triggers")
+			h.cfg.Log(1, "disabling triggers")
 		}
 		if _, err := tx.Exec(ctx, `SET session_replication_role = replica`); err != nil {
 			return errs.Wrap(err, "disable triggers")
 		}
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "connected to postgres", h.opts.URI)
+		h.cfg.Log(2, "connected to", h.cfg.ConnTarget(h.opts.URI))
 	}
 	return nil
 }
@@ -78,7 +78,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	if !h.seen[col.Name] {
 		if effective.Drop {
 			if h.cfg.Messages != nil {
-				h.cfg.Messages.Log(1, "dropping", col.Name)
+				h.cfg.Log(1, "dropping", col.Name)
 			}
 			if _, err := h.tx.Exec(ctx, `DROP TABLE IF EXISTS `+fqTable); err != nil {
 				return nil, errs.Wrap(err, "drop table", "table", col.Name)
@@ -86,7 +86,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		}
 		if effective.AutoCreate {
 			if h.cfg.Messages != nil {
-				h.cfg.Messages.Log(1, "creating", col.Name)
+				h.cfg.Log(1, "creating", col.Name)
 			}
 			if _, err := h.tx.Exec(ctx, buildCreateTable(fqTable, columnNames(firstRow))); err != nil {
 				return nil, errs.Wrap(err, "create table", "table", col.Name)
@@ -94,7 +94,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		}
 		if effective.Truncate {
 			if h.cfg.Messages != nil {
-				h.cfg.Messages.Log(1, "truncating", col.Name)
+				h.cfg.Log(1, "truncating", col.Name)
 			}
 			if _, err := h.tx.Exec(ctx, `TRUNCATE `+fqTable+` RESTART IDENTITY CASCADE`); err != nil {
 				return nil, errs.Wrap(err, "truncate table", "table", col.Name)
@@ -115,7 +115,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		}
 		if !exists {
 			if h.cfg.Messages != nil {
-				h.cfg.Messages.Log(1, "ignoring non-existing table", col.Name)
+				h.cfg.Log(1, "ignoring non-existing table", col.Name)
 			}
 			return &noopWriter{}, nil
 		}
@@ -185,7 +185,7 @@ func (h *sinkHooks) Rollback(ctx context.Context) {
 		_ = h.tun.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "rolled back postgres transaction")
+		h.cfg.Log(2, "rolled back postgres transaction")
 	}
 }
 
@@ -209,7 +209,7 @@ func (h *sinkHooks) Finish(ctx context.Context) error {
 		_ = h.tun.Close()
 	}
 	if h.cfg.Messages != nil {
-		h.cfg.Messages.Log(2, "committed postgres changes")
+		h.cfg.Log(2, "committed postgres changes")
 	}
 	return nil
 }
@@ -271,13 +271,6 @@ func (w *copyWriter) Close() error {
 	if err := resetTableSequences(w.ctx, w.tx, w.cfg, w.table, w.schema, w.tableName); err != nil {
 		return err
 	}
-	if w.cfg.Messages != nil && w.cfg.Verbose >= 2 {
-		var n int64
-		q := fmt.Sprintf(`SELECT count(*) FROM %s`, w.fqTable)
-		if err := w.tx.QueryRow(w.ctx, q).Scan(&n); err == nil {
-			w.cfg.Messages.Log(2, "table", w.table, "now has", n, "rows")
-		}
-	}
 	return nil
 }
 
@@ -336,7 +329,7 @@ func (w *copyWriter) flushToTable() error {
 		w.tempTable, w.rowType, upsert)
 
 	if w.cfg.Messages != nil {
-		w.cfg.Messages.Log(3, sql)
+		w.cfg.Log(3, sql)
 	}
 
 	var inserted, updated int64
@@ -345,9 +338,9 @@ func (w *copyWriter) flushToTable() error {
 	}
 	if w.cfg.Messages != nil {
 		if w.colOpts.Upsert || w.global.Upsert {
-			w.cfg.Messages.Log(1, w.table, inserted, "rows inserted,", updated, "rows updated")
+			w.cfg.Log(1, w.table, inserted, "rows inserted,", updated, "rows updated")
 		} else {
-			w.cfg.Messages.Log(1, w.table, inserted, "rows inserted")
+			w.cfg.Log(1, w.table, inserted, "rows inserted")
 		}
 	}
 	return nil
@@ -401,14 +394,14 @@ func (w *copyWriter) runUpdate() error {
 		WHERE %s`, w.fqTable, strings.Join(setParts, ", "), w.rowType, w.tempTable, strings.Join(whereParts, " AND "))
 
 	if w.cfg.Messages != nil {
-		w.cfg.Messages.Log(3, sql)
+		w.cfg.Log(3, sql)
 	}
 	tag, err := w.tx.Exec(w.ctx, sql)
 	if err != nil {
 		return errs.Wrap(err, "update from copy temp", "table", w.table)
 	}
 	if w.cfg.Messages != nil {
-		w.cfg.Messages.Log(1, w.table, tag.RowsAffected(), "rows updated")
+		w.cfg.Log(1, w.table, tag.RowsAffected(), "rows updated")
 	}
 	return nil
 }
@@ -490,7 +483,7 @@ func dropTableIndexes(ctx context.Context, tx pgx.Tx, cfg handlers.Config, schem
 	}
 	for _, idx := range indices {
 		if cfg.Messages != nil {
-			cfg.Messages.Log(1, "dropping index", idx.Name)
+			cfg.Log(1, "dropping index", idx.Name)
 		}
 		stmt := fmt.Sprintf(`DROP INDEX "%s"."%s"`, idx.Schema, idx.Name)
 		if _, err := tx.Exec(ctx, stmt); err != nil {
@@ -503,7 +496,7 @@ func dropTableIndexes(ctx context.Context, tx pgx.Tx, cfg handlers.Config, schem
 func recreateIndexes(ctx context.Context, tx pgx.Tx, cfg handlers.Config, indices []pgIndex) error {
 	for _, idx := range indices {
 		if cfg.Messages != nil {
-			cfg.Messages.Log(1, "recreating index", idx.Name)
+			cfg.Log(1, "recreating index", idx.Name)
 		}
 		if _, err := tx.Exec(ctx, idx.Def); err != nil {
 			return errs.Wrap(err, "recreate index", "index", idx.Name)
@@ -546,7 +539,7 @@ func resetTableSequences(ctx context.Context, tx pgx.Tx, cfg handlers.Config, fq
 
 	for _, s := range seqs {
 		if cfg.Messages != nil {
-			cfg.Messages.Log(2, "resetting sequence", s.seq)
+			cfg.Log(2, "resetting sequence", s.seq)
 		}
 		sql := fmt.Sprintf(`
 			DO $$
