@@ -107,7 +107,7 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `sqlite-sink` | `handler/sqlite` | ✅ | `-t/-d/-u`, transaction + rollback |
 | `csv-src` | `handler/csv` | ✅ | multi-file, `-u` numbers, `-s` headers, gunzip |
 | `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
-| `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, schema auto-tables, `-q`, `schema.*` |
+| `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, `-s` schema FK order, `-q`, `.*` wildcard |
 | `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
 | others | — | stub | mysql, duckdb, yaml, xlsx, parquet, fn |
 
@@ -162,12 +162,17 @@ testdata/csv/            CSV fixture files
 ```bash
 go test ./...
 make test
+make test-pg   # handler/pg integration (Docker + testcontainers)
 ```
+
+Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 
 | Location | Covers |
 |----------|--------|
 | `internal/stream`, `cli`, `pipeline`, `errs`, `handlers` | Unit |
 | `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/registry` | Handlers |
+| `handler/pg` (integration) | testcontainers Postgres, FK schema order, sink round-trip |
+| `testdata/pg/fixtures.sql` | `app` schema FK chain (accounts → users → posts) |
 | `test/swltest` | Pipeline integration (mem source, flatten) |
 
 ---

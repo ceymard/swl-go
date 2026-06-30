@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ceymard/swl-go/internal/coll"
@@ -284,15 +285,27 @@ func columnNames(row coll.Row) []string {
 }
 
 func bindValue(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
 	switch x := v.(type) {
+	case string:
+		return x, nil
 	case map[string]any, []any:
 		b, err := json.Marshal(x)
 		if err != nil {
 			return nil, err
 		}
 		return string(b), nil
+	case float64:
+		if x == float64(int64(x)) {
+			return strconv.FormatInt(int64(x), 10), nil
+		}
+		return strconv.FormatFloat(x, 'f', -1, 64), nil
+	case bool:
+		return strconv.FormatBool(x), nil
 	default:
-		return v, nil
+		return fmt.Sprint(x), nil
 	}
 }
 

@@ -1,7 +1,7 @@
 BINARY := swl
 CMD    := ./cmd/swl
 
-.PHONY: all build install test clean
+.PHONY: all build install test test-pg clean
 
 all: build
 
@@ -15,6 +15,10 @@ install:
 
 test:
 	go test ./...
+
+# Postgres integration tests (requires Docker).
+test-pg:
+	go test ./handler/pg/... -v -count=1
 
 clean:
 	rm -f $(BINARY)

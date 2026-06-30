@@ -54,28 +54,6 @@ func querySQL(spec TableSpec) string {
 	return `SELECT * FROM "` + schema + `"."` + table + `" TBL`
 }
 
-func listSchemaTables(ctx context.Context, pool *pgxpool.Pool, schema string) ([]TableSpec, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT table_schema || '.' || table_name
-		FROM information_schema.tables
-		WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-		ORDER BY 1`, schema)
-	if err != nil {
-		return nil, errs.Wrap(err, "list postgres tables", "schema", schema)
-	}
-	defer rows.Close()
-
-	var specs []TableSpec
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, errs.Wrap(err, "scan table name")
-		}
-		specs = append(specs, TableSpec{Name: name})
-	}
-	return specs, rows.Err()
-}
-
 func expandWildcardSources(ctx context.Context, pool *pgxpool.Pool, sources []TableSpec) ([]TableSpec, error) {
 	var out []TableSpec
 	for _, s := range sources {
