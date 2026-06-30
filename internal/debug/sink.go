@@ -12,11 +12,16 @@ import (
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
+	"github.com/ceymard/swl-go/internal/style"
 )
 
 // Sink drains the stream and prints every row to stderr.
 func Sink(verbose int, in coll.Stream) error {
-	out := os.Stderr
+	return sinkTo(os.Stderr, verbose, in)
+}
+
+func sinkTo(out io.Writer, verbose int, in coll.Stream) error {
+	colorize := style.Enabled(out)
 	var current string
 	var n int
 	for c, err := range in {
@@ -30,60 +35,32 @@ func Sink(verbose int, in coll.Stream) error {
 				return err
 			}
 			n++
-			if err := printRow(out, current, n, row); err != nil {
+			if err := printRow(out, current, n, row, colorize); err != nil {
 				return err
 			}
 		}
 	}
-	_ = verbose // reserved for future formatted output levels
+	_ = verbose
 	return nil
 }
 
 // PrintRow prints one row (used by -p passthrough tee in runner).
 func PrintRow(verbose int, c coll.Collection, row coll.Row) error {
 	_ = verbose
-	return printRow(os.Stderr, c.Name, 0, row)
+	return printRow(os.Stderr, c.Name, 0, row, style.Enabled(os.Stderr))
 }
 
-// printRow formats a single row as "collection:N key: value, ...".
-func printRow(out io.Writer, collection string, num int, row coll.Row) error {
+// printRow formats one row: "collection:N key: value, ..." with colors when enabled.
+func printRow(out io.Writer, collection string, num int, row coll.Row, colorize bool) error {
 	if num > 0 {
-		_, err := fmt.Fprintf(out, "%s:%d ", collection, num)
-		if err != nil {
+		prefix := style.Collection(collection, colorize) + style.Sep(":", colorize) + style.LineNum(strconv.Itoa(num), colorize) + " "
+		if _, err := io.WriteString(out, prefix); err != nil {
 			return errs.Wrap(err, "debug write")
 		}
 	}
-	first := true
-	for k, v := range row {
-		if !first {
-			_, _ = fmt.Fprint(out, ", ")
-		}
-		first = false
-		_, _ = fmt.Fprintf(out, "%s: %s", k, formatValue(v))
+	if err := printValue(out, row, colorize, true); err != nil {
+		return err
 	}
 	_, err := fmt.Fprintln(out)
 	return err
-}
-
-// formatValue renders a cell for human-readable debug output.
-func formatValue(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return "null"
-	case string:
-		if x == "" {
-			return "''"
-		}
-		return strconv.Quote(x)
-	case bool:
-		return strconv.FormatBool(x)
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case int:
-		return strconv.Itoa(x)
-	case int64:
-		return strconv.FormatInt(x, 10)
-	default:
-		return fmt.Sprint(v)
-	}
 }

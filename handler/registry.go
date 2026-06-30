@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/ceymard/swl-go/internal/stage"
+	"github.com/ceymard/swl-go/internal/style"
 )
 
 // Handler is any registered stage implementation (Source, Transform, or Sink).
@@ -174,9 +175,33 @@ func ListAvailable() string {
 	return b.String()
 }
 
-// WriteAvailable writes ListAvailable to w (stdout in the CLI).
+// WriteAvailable writes the handler list to w, with colors when w is a TTY.
 func WriteAvailable(w io.Writer) {
-	fmt.Fprint(w, ListAvailable())
+	colorize := style.Enabled(w)
+	if !colorize {
+		fmt.Fprint(w, ListAvailable())
+		return
+	}
+	writeAliasSectionStyled(w, style.Heading("handlers:", true), aliases, colorize)
+	writeAliasSectionStyled(w, style.Heading("extensions:", true), extensions, colorize)
+	writeAliasSectionStyled(w, style.Heading("protocols:", true), protocols, colorize)
+}
+
+func writeAliasSectionStyled(w io.Writer, heading string, m map[string]aliasEntry, colorize bool) {
+	fmt.Fprintln(w, heading)
+	for _, name := range sortedKeys(m) {
+		sig := aliasSigil(m[name])
+		switch sig {
+		case "⇄":
+			sig = style.SigilBoth(sig, colorize)
+		case "←":
+			sig = style.SigilSource(sig, colorize)
+		default:
+			sig = style.SigilSink(sig, colorize)
+		}
+		fmt.Fprintf(w, "  %s %s\n", sig, style.HandlerName(name, colorize))
+	}
+	fmt.Fprintln(w)
 }
 
 func writeAliasSection(b *strings.Builder, heading string, m map[string]aliasEntry) {

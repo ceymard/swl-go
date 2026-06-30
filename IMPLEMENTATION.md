@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — JSON source/sink implemented; empty CLI handler list; Makefile added.*
+*Last updated: 2026-06-30 — colored CLI output (debug rows, handler list).*
 
 ---
 
@@ -11,7 +11,7 @@
 | Area | State |
 |------|--------|
 | Core runtime (coll, stream, runner) | ✅ Done |
-| CLI (Kong + pipeline parse + empty handler list) | ✅ Done |
+| CLI (Kong + pipeline parse + empty handler list + **colors**) | ✅ Done |
 | Transforms (flatten, unflatten, coerce, uncoerce) | ✅ Done |
 | JSON source + sink | ✅ Done |
 | CSV, SQLite, PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
@@ -66,6 +66,21 @@ make build
 
 Pipeline tokens: `++` chains sources, `::` separates source side from transforms/sink.
 
+**Terminal colors** (`internal/style`, palette from swl2 `debug.ts`):
+
+| Element | Color |
+|---------|--------|
+| Collection name | yellow |
+| Row number | green |
+| Field keys | cyan |
+| Strings | green |
+| Numbers | bright green |
+| Booleans | magenta |
+| null | red |
+| Handler ⇄/←/→ | magenta / green / red |
+
+Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
+
 **Parsing flow:**
 
 1. Kong — global flags (`-v`, `--quiet`, `-h`)
@@ -104,7 +119,8 @@ internal/
   handlers/              Source, Transform, Sink interfaces
   pipeline/              Parse, stageTarget, resolveHandler
   cli/                   ExpandFlags, BuildParser, ParseArgs, BaseOpts
-  debug/                 Default stderr sink
+  debug/                 Default stderr sink (colored when TTY)
+  style/                 ANSI colors for CLI (NO_COLOR / non-TTY safe)
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
@@ -123,6 +139,7 @@ testdata/json/           JSON fixture files
 | `github.com/alecthomas/participle/v2` | Handler argv |
 | `github.com/samber/oops` | Error stacks |
 | `github.com/aeolun/json5` | JSON5 source read |
+| `github.com/fatih/color` | Terminal colors (`internal/style`) |
 
 ---
 

@@ -16,6 +16,7 @@ import (
 	"github.com/ceymard/swl-go/internal/msg"
 	"github.com/ceymard/swl-go/internal/pipeline"
 	"github.com/ceymard/swl-go/internal/runner"
+	"github.com/ceymard/swl-go/internal/style"
 )
 
 // globalCLI holds flags parsed by Kong before pipeline tokens.
@@ -40,9 +41,10 @@ func main() {
 
 	// swl2: empty pipeline prints available handlers/extensions/protocols.
 	if len(cli.Pipeline) == 0 {
-		fmt.Fprintln(os.Stderr, "error: a command may not be empty")
+		c := style.Enabled(os.Stderr)
+		fmt.Fprintln(os.Stderr, style.Error("error:", c), "a command may not be empty")
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "  list of available sources/sinks :")
+		fmt.Fprintln(os.Stderr, style.Dim("  list of available sources/sinks :", c))
 		fmt.Fprintln(os.Stderr)
 		handler.WriteAvailable(os.Stdout)
 		os.Exit(1)
