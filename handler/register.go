@@ -8,6 +8,7 @@ import (
 	"github.com/ceymard/swl-go/handler/pg"
 	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/handler/unflatten"
+	"github.com/ceymard/swl-go/handler/xlsx"
 )
 
 func init() {
@@ -59,6 +60,11 @@ func init() {
 	RegisterParser("pg-sink", pg.ParseSinkOptions)
 	RegisterOptParser("pg-sink", pg.SinkOptParser())
 
+	// Spreadsheet source (swl2 swl-xlsx-src.ts): xlsx, xlsb, xlsm, ods.
+	Register("xlsx-src", xlsx.Source{}, Meta{})
+	RegisterParser("xlsx-src", xlsx.ParseSrcOptions)
+	RegisterOptParser("xlsx-src", xlsx.SrcOptParser())
+
 	registerStubs()
 }
 
@@ -67,7 +73,7 @@ func registerStubs() {
 	stubs := []string{
 		"my-src",
 		"duckdb-src", "duckdb-sink",
-		"xlsx-src", "xlsx-sink", "yaml-src", "yaml-sink",
+		"xlsx-sink", "yaml-src", "yaml-sink",
 		"parquet-src", "parquet-sink", "fn",
 	}
 	for _, id := range stubs {

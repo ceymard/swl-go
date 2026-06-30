@@ -1,7 +1,7 @@
 BINARY := swl
 CMD    := ./cmd/swl
 
-.PHONY: all build install test test-pg clean
+.PHONY: all build install test test-coverage test-pg clean
 
 all: build
 
@@ -15,6 +15,10 @@ install:
 
 test:
 	go test ./...
+
+test-coverage:
+	go test ./... -coverprofile=/tmp/swl-cover.out
+	go tool cover -func=/tmp/swl-cover.out | tail -1
 
 # Postgres integration tests (requires Docker).
 test-pg:

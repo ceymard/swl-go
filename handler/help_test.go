@@ -72,3 +72,30 @@ func TestHelpForArgvNoHandlerHelp(t *testing.T) {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
 }
+
+func TestHelpForArgvShortFlag(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"csv", "-h"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(text, "swl csv") {
+		t.Fatalf("missing usage: %q", text)
+	}
+}
+
+func TestHelpForArgvXlsxSource(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"+xlsx", "--help"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(text, "swl +xlsx") || !strings.Contains(text, "collections") {
+		t.Fatalf("expected xlsx-src help, got:\n%s", text)
+	}
+}
+
+func TestHelpForArgvUnknownHandler(t *testing.T) {
+	_, ok, err := handler.HelpForArgv([]string{"nope", "--help"}, "swl")
+	if !ok || err == nil {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+}

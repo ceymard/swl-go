@@ -100,3 +100,30 @@ func TestParseInlineJSON(t *testing.T) {
 		t.Fatalf("file %q", opts.File)
 	}
 }
+
+func TestParseExplicitSourceBeforeColon(t *testing.T) {
+	p, err := pipeline.Parse([]string{"+sqlite", "app.db"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Stages[0].ID != "sqlite-src" || p.Stages[0].Kind != stage.Source {
+		t.Fatalf("stage %+v", p.Stages[0])
+	}
+}
+
+func TestParseSinkAfterColon(t *testing.T) {
+	p, err := pipeline.Parse([]string{"data.json", "::", "out.db"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Stages) != 2 || p.Stages[1].ID != "sqlite-sink" || p.Stages[1].Kind != stage.Sink {
+		t.Fatalf("stages %+v", p.Stages)
+	}
+}
+
+func TestParseEmptyPipeline(t *testing.T) {
+	_, err := pipeline.Parse(nil, 0)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

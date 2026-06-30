@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — CSV source/sink implemented.*
+*Last updated: 2026-06-30 — xlsx-src (xlsx/xlsb/xlsm/ods).*
 
 ---
 
@@ -16,8 +16,10 @@
 | JSON source + sink | ✅ Done |
 | SQLite source + sink | ✅ Done |
 | CSV source + sink | ✅ Done |
-| PG, mysql, duckdb, yaml, xlsx, parquet, fn | ⏳ Stubs (fail at run) |
-| SSH tunnels | ⏳ Not started |
+| PG source + sink | ✅ Done |
+| xlsx source | ✅ Done |
+| mysql, duckdb, yaml, xlsx-sink, parquet, fn | ⏳ Stubs (fail at run) |
+| SSH tunnels | ✅ Done |
 | sonic JSON writer | ⏳ Deferred (Go 1.26 + sonic incompatibility; using `encoding/json`) |
 
 **Module:** `github.com/ceymard/swl-go` · **Go:** 1.26.4 · **Binary:** `make build` → `./swl`
@@ -109,7 +111,8 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
 | `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, `-s` schema FK order, `-q`, `.*` wildcard |
 | `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
-| others | — | stub | mysql, duckdb, yaml, xlsx, parquet, fn |
+| `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsb/xlsm via excelize, ods via knieriem/odf; sheets, `-r/-e/-i` |
+| others | — | stub | mysql, duckdb, yaml, xlsx-sink, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -133,7 +136,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -153,15 +156,19 @@ testdata/csv/            CSV fixture files
 | `github.com/jackc/pgx/v5` | PostgreSQL driver |
 | `golang.org/x/crypto/ssh` | SSH tunnel forwarding |
 | `github.com/kevinburke/ssh_config` | `~/.ssh/config` lookup |
-| `golang.org/x/text` | CSV header normalization (NFD) |
+| `github.com/xuri/excelize/v2` | xlsx/xlsb/xlsm read |
+| `github.com/knieriem/odf` | ODS read |
 
 ---
 
 ## Tests
 
+**Policy:** Every new handler, CLI behavior, or pipeline syntax change must ship with tests in the same change — unit tests for parsing/edge cases, integration tests when data flows across stages (`test/swltest` or `handler/*/…_integration_test.go`). Prefer committed fixtures under `testdata/` over generating files only at runtime.
+
 ```bash
 go test ./...
 make test
+make test-coverage   # per-package coverage summary
 make test-pg   # handler/pg integration (Docker + testcontainers)
 ```
 
@@ -169,11 +176,12 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 
 | Location | Covers |
 |----------|--------|
-| `internal/stream`, `cli`, `pipeline`, `errs`, `handlers` | Unit |
-| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/registry` | Handlers |
+| `internal/stream`, `cli`, `pipeline`, `errs`, `handlers`, `runner` | Unit + runner integration |
+| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/flatten`, `handler/registry` | Handlers |
+| `handler/help_test.go`, `internal/pipeline/parse_test.go` | `--help`, `+handler`, `::` syntax |
 | `handler/pg` (integration) | testcontainers Postgres, FK schema order, sink round-trip |
-| `testdata/pg/fixtures.sql` | `app` schema FK chain (accounts → users → posts) |
-| `test/swltest` | Pipeline integration (mem source, flatten) |
+| `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg` | Committed fixtures |
+| `test/swltest` | End-to-end pipelines (flatten, xlsx→sqlite) |
 
 ---
 
@@ -193,6 +201,8 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 - PG sink uses INSERT + ON CONFLICT (not swl2 COPY/json_populate_record yet)
 - CSV sink default delimiter is `;` (swl2 parity); source default is `,`
 - SSH tunnel uses `InsecureIgnoreHostKey` (match swl2/node-ssh; use known_hosts for production)
+- Legacy `.xls` (BIFF) not supported; use `.xlsx` or `.xlsb`
+- xlsx-sink still stub
 - Multi-collection single-file json sink (non-`-o`) emits concatenated arrays (swl2 parity)
 
 ---
