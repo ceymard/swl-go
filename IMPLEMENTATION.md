@@ -107,7 +107,9 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `sqlite-sink` | `handler/sqlite` | ✅ | `-t/-d/-u`, transaction + rollback |
 | `csv-src` | `handler/csv` | ✅ | multi-file, `-u` numbers, `-s` headers, gunzip |
 | `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
-| others | — | stub | pg, mysql, duckdb, yaml, xlsx, parquet, fn |
+| `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, schema auto-tables, `-q`, `schema.*` |
+| `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
+| others | — | stub | mysql, duckdb, yaml, xlsx, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -124,13 +126,14 @@ internal/
   handlers/              Source, Transform, Sink interfaces, ConsumeHooks
   pipeline/              Parse, stageTarget, resolveHandler
   optparse/              Port of swl2 optparse.ts (flag, param, arg, oneof, expand_flags)
+  ssh/                   URI @@ SSH tunnel forwarding (swl2 uri_maybe_open_tunnel)
   cli/                   BaseOpts, ExpandFlags re-export
   debug/                 Default stderr sink (colored when TTY)
   style/                 ANSI colors for CLI (NO_COLOR / non-TTY safe)
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -147,6 +150,9 @@ testdata/csv/            CSV fixture files
 | `github.com/aeolun/json5` | JSON5 source read |
 | `github.com/fatih/color` | Terminal colors (`internal/style`) |
 | `modernc.org/sqlite` | SQLite driver (pure Go) |
+| `github.com/jackc/pgx/v5` | PostgreSQL driver |
+| `golang.org/x/crypto/ssh` | SSH tunnel forwarding |
+| `github.com/kevinburke/ssh_config` | `~/.ssh/config` lookup |
 | `golang.org/x/text` | CSV header normalization (NFD) |
 
 ---
@@ -161,15 +167,15 @@ make test
 | Location | Covers |
 |----------|--------|
 | `internal/stream`, `cli`, `pipeline`, `errs`, `handlers` | Unit |
-| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/registry` | Handlers |
+| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/registry` | Handlers |
 | `test/swltest` | Pipeline integration (mem source, flatten) |
 
 ---
 
 ## Next work
 
-1. **SSH** — `internal/ssh/tunnel.go`
-2. **PG / mysql** — database handlers
+1. **PG sink polish** — COPY/json_populate_record path from swl2 (current: INSERT)
+2. **mysql** — database handlers
 3. **sonic sink** — when compatible with Go 1.26
 4. **Polish** — per-handler help, golden vs swl2
 
@@ -179,7 +185,9 @@ make test
 
 - `BaseOpts` (`-p`, `-a`, `-v`) parsed but not fully merged into `runner.Config`
 - Global `-p` passthrough only on transform path in runner
+- PG sink uses INSERT + ON CONFLICT (not swl2 COPY/json_populate_record yet)
 - CSV sink default delimiter is `;` (swl2 parity); source default is `,`
+- SSH tunnel uses `InsecureIgnoreHostKey` (match swl2/node-ssh; use known_hosts for production)
 - Multi-collection single-file json sink (non-`-o`) emits concatenated arrays (swl2 parity)
 
 ---
