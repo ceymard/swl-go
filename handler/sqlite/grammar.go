@@ -2,12 +2,13 @@ package sqlite
 
 import (
 	"github.com/ceymard/swl-go/internal/cli"
+	"github.com/ceymard/swl-go/internal/optparse"
 )
 
 // TableSpec selects one collection from a SQL source.
 type TableSpec struct {
 	Name  string
-	Query string // empty → SELECT * FROM name
+	Query string
 }
 
 // SrcOpts is parsed argv for sqlite-src.
@@ -17,30 +18,26 @@ type SrcOpts struct {
 	cli.BaseOpts
 }
 
-type tableSpecParser struct {
-	Name  string  `@Arg`
-	Query *string `parser:"( ( '-q' | '--query' ) @Arg )?"`
-}
-
-type srcTailParser struct {
-	Tables []tableSpecParser `@@*`
-}
+var srcParser = optparse.Optparser(
+	optparse.Arg("file").Required(),
+).Include(optparse.DefaultOpts).AddHandler(
+	optparse.Oneof(optparse.DefaultColSQLOpts).As("collections").Repeat(),
+)
 
 // ParseSrcOptions parses sqlite-src flags; target is the database file path.
 func ParseSrcOptions(target string, tail []string) (any, error) {
-	p, err := cli.BuildParser[srcTailParser]()
+	m, err := srcParser.Parse(append([]string{target}, tail...))
 	if err != nil {
 		return nil, err
 	}
-	o, err := cli.ParseArgs(p, tail)
-	if err != nil {
-		return nil, err
+	opts := SrcOpts{
+		File:     optparse.Str(m, "file"),
+		BaseOpts: cli.BaseOptsFrom(m),
 	}
-	opts := SrcOpts{File: target, BaseOpts: cli.BaseOpts{}}
-	for _, t := range o.Tables {
-		spec := TableSpec{Name: t.Name}
-		if t.Query != nil {
-			spec.Query = *t.Query
+	for _, col := range optparse.MapSlice(m, "collections") {
+		spec := TableSpec{Name: optparse.Str(col, "name")}
+		if q := optparse.Str(col, "query"); q != "" {
+			spec.Query = q
 		}
 		opts.Tables = append(opts.Tables, spec)
 	}
@@ -56,28 +53,45 @@ type SinkOpts struct {
 	cli.BaseOpts
 }
 
-type sinkParser struct {
-	Truncate bool `parser:"( '-t' | '--truncate' )?"`
-	Drop     bool `parser:"( '-d' | '--drop' )?"`
-	Upsert   bool `parser:"( '-u' | '--upsert' )?"`
-	cli.BaseOpts
-}
+var colSinkOpts = optparse.Optparser(
+	optparse.Flag("-t", "--truncate").As("truncate"),
+	optparse.Flag("-d", "--drop").As("drop"),
+	optparse.Flag("-u", "--upsert").As("upsert"),
+)
+
+var colSinkParser = optparse.Optparser(
+	optparse.Arg("name").Required(),
+).Include(colSinkOpts)
+
+var sinkParser = optparse.Optparser(
+	optparse.Arg("file").Required(),
+).Include(optparse.DefaultOpts).Include(colSinkOpts).AddHandler(
+	optparse.Oneof(colSinkParser).As("collections").Repeat(),
+)
 
 // ParseSinkOptions parses sqlite-sink flags; target is the database file path.
 func ParseSinkOptions(target string, tail []string) (any, error) {
-	p, err := cli.BuildParser[sinkParser]()
+	m, err := sinkParser.Parse(append([]string{target}, tail...))
 	if err != nil {
 		return nil, err
 	}
-	o, err := cli.ParseArgs(p, tail)
-	if err != nil {
-		return nil, err
+	opts := SinkOpts{
+		File:     optparse.Str(m, "file"),
+		Truncate: optparse.Bool(m, "truncate"),
+		Drop:     optparse.Bool(m, "drop"),
+		Upsert:   optparse.Bool(m, "upsert"),
+		BaseOpts: cli.BaseOptsFrom(m),
 	}
-	return SinkOpts{
-		File:     target,
-		Truncate: o.Truncate,
-		Drop:     o.Drop,
-		Upsert:   o.Upsert,
-		BaseOpts: o.BaseOpts,
-	}, nil
+	for _, col := range optparse.MapSlice(m, "collections") {
+		if optparse.Bool(col, "truncate") {
+			opts.Truncate = true
+		}
+		if optparse.Bool(col, "drop") {
+			opts.Drop = true
+		}
+		if optparse.Bool(col, "upsert") {
+			opts.Upsert = true
+		}
+	}
+	return opts, nil
 }

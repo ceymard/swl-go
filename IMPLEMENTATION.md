@@ -89,7 +89,7 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 1. Kong — global flags (`-v`, `--quiet`, `-h`)
 2. `internal/pipeline` — split segments, resolve handler (alias / extension / protocol / inline JSON)
 3. `stageTarget` — path vs flags (`data.json`, `json file.json`, `flatten -o x`)
-4. `handler.ParseOptions(id, target, tail)` — Participle or manual grammars per handler
+4. `handler.ParseOptions(id, target, tail)` — `internal/optparse` (port of swl2 `optparse.ts`)
 
 ---
 
@@ -123,7 +123,8 @@ internal/
   runner/                Run
   handlers/              Source, Transform, Sink interfaces, ConsumeHooks
   pipeline/              Parse, stageTarget, resolveHandler
-  cli/                   ExpandFlags, BuildParser, ParseArgs, ParseArgsNoExpand
+  optparse/              Port of swl2 optparse.ts (flag, param, arg, oneof, expand_flags)
+  cli/                   BaseOpts, ExpandFlags re-export
   debug/                 Default stderr sink (colored when TTY)
   style/                 ANSI colors for CLI (NO_COLOR / non-TTY safe)
   errs/, msg/, schema/, stage/
@@ -142,7 +143,6 @@ testdata/csv/            CSV fixture files
 | Package | Use |
 |---------|-----|
 | `github.com/alecthomas/kong` | Global CLI |
-| `github.com/alecthomas/participle/v2` | Handler argv (where used) |
 | `github.com/samber/oops` | Error stacks |
 | `github.com/aeolun/json5` | JSON5 source read |
 | `github.com/fatih/color` | Terminal colors (`internal/style`) |
@@ -186,4 +186,4 @@ make test
 
 ## swl2 reference
 
-TypeScript reference: [`swl2/`](swl2/) — do not port `optparse.ts` verbatim; use Participle or manual grammars per handler.
+TypeScript reference: [`swl2/`](swl2/) — handler argv uses a Go port of [`swl2/src/optparse.ts`](swl2/src/optparse.ts) in `internal/optparse`.

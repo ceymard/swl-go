@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ceymard/swl-go/internal/cli"
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
+	"github.com/ceymard/swl-go/internal/optparse"
 	"github.com/ceymard/swl-go/internal/stream"
 )
 
@@ -22,26 +22,20 @@ type Transform struct{}
 
 type Options struct {
 	Only []string // -o: limit columns to coerce
-	cli.BaseOpts
 }
 
-type optsParser struct {
-	Only *string `parser:"( ( '-o' | '--only-columns' ) @Arg )?"`
-	cli.BaseOpts
-}
+var coerceParser = optparse.Optparser(
+	optparse.Param("-o", "--only-columns").As("only"),
+)
 
 func ParseOptions(argv []string) (any, error) {
-	p, err := cli.BuildParser[optsParser]()
+	m, err := coerceParser.Parse(argv)
 	if err != nil {
 		return nil, err
 	}
-	o, err := cli.ParseArgs(p, argv)
-	if err != nil {
-		return nil, err
-	}
-	opts := Options{BaseOpts: o.BaseOpts}
-	if o.Only != nil {
-		opts.Only = splitCSV(*o.Only)
+	opts := Options{}
+	if only := optparse.Str(m, "only"); only != "" {
+		opts.Only = splitCSV(only)
 	}
 	return opts, nil
 }
@@ -95,35 +89,31 @@ type UncoerceOptions struct {
 	Bool      bool // -b: parse true/false strings
 	Trim      bool // -t: trim whitespace on strings
 	NullEmpty bool // -n: "" → nil
-	cli.BaseOpts
 }
 
-type uncoerceParser struct {
-	Only      *string `parser:"( ( '-o' | '--only-columns' ) @Arg )?"`
-	Except    *string `parser:"( ( '-e' | '--except' ) @Arg )?"`
-	Bool      bool    `parser:"( '-b' | '--boolean' )?"`
-	Trim      bool    `parser:"( '-t' | '--trim' )?"`
-	NullEmpty bool    `parser:"( '-n' | '--empty-is-null' )?"`
-	cli.BaseOpts
-}
+var uncoerceParser = optparse.Optparser(
+	optparse.Param("-o", "--only-columns").As("only"),
+	optparse.Param("-e", "--except").As("except"),
+	optparse.Flag("-b", "--boolean").As("boolean"),
+	optparse.Flag("-t", "--trim").As("trim"),
+	optparse.Flag("-n", "--empty-is-null").As("empty_is_null"),
+)
 
 func ParseUncoerceOptions(argv []string) (any, error) {
-	p, err := cli.BuildParser[uncoerceParser]()
-	if err != nil {
-		return nil, err
-	}
-	o, err := cli.ParseArgs(p, argv)
+	m, err := uncoerceParser.Parse(argv)
 	if err != nil {
 		return nil, err
 	}
 	opts := UncoerceOptions{
-		Bool: o.Bool, Trim: o.Trim, NullEmpty: o.NullEmpty, BaseOpts: o.BaseOpts,
+		Bool:      optparse.Bool(m, "boolean"),
+		Trim:      optparse.Bool(m, "trim"),
+		NullEmpty: optparse.Bool(m, "empty_is_null"),
 	}
-	if o.Only != nil {
-		opts.Only = splitCSV(*o.Only)
+	if only := optparse.Str(m, "only"); only != "" {
+		opts.Only = splitCSV(only)
 	}
-	if o.Except != nil {
-		opts.Except = splitCSV(*o.Except)
+	if except := optparse.Str(m, "except"); except != "" {
+		opts.Except = splitCSV(except)
 	}
 	return opts, nil
 }

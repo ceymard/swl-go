@@ -6,35 +6,29 @@ package unflatten
 import (
 	"context"
 
-	"github.com/ceymard/swl-go/internal/cli"
-	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/handler/flatten"
+	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
+	"github.com/ceymard/swl-go/internal/optparse"
 	"github.com/ceymard/swl-go/internal/stream"
 )
 
 type Transform struct{}
 
 type Options struct {
-	NoEmpty bool // -n: drop empty branches after rebuild
-	cli.BaseOpts
+	NoEmpty bool
 }
 
-type optsParser struct {
-	NoEmpty bool `parser:"( '-n' | '--no-empty' )?"`
-	cli.BaseOpts
-}
+var optsParser = optparse.Optparser(
+	optparse.Flag("-n", "--no-empty").As("noempty"),
+)
 
 func ParseOptions(argv []string) (any, error) {
-	p, err := cli.BuildParser[optsParser]()
+	m, err := optsParser.Parse(argv)
 	if err != nil {
 		return nil, err
 	}
-	o, err := cli.ParseArgs(p, argv)
-	if err != nil {
-		return nil, err
-	}
-	return Options{NoEmpty: o.NoEmpty, BaseOpts: o.BaseOpts}, nil
+	return Options{NoEmpty: optparse.Bool(m, "noempty")}, nil
 }
 
 func (Transform) Transform(ctx context.Context, cfg handlers.Config, in coll.Stream, raw any) (coll.Stream, error) {

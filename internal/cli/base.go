@@ -1,13 +1,24 @@
-// Package cli tokenizes argv and parses handler flags with Participle v2.
-//
-// Each handler embeds BaseOpts for shared flags; handler-specific grammars live
-// in handler/* packages. We do not port swl2 optparse.ts — grammars are per-handler.
+// Package cli holds shared handler CLI types used with internal/optparse.
 package cli
 
+import "github.com/ceymard/swl-go/internal/optparse"
+
 // BaseOpts are shared swl handler flags (-p, -a, -v).
-// Tag values must use parser:"..." (valid reflect.StructTag) — see participle docs.
 type BaseOpts struct {
-	Passthrough bool    `parser:"( '-p' | '--passthrough' )?"` // tee rows to stderr while processing
-	Alias       *string `parser:"( ( '-a' | '--alias' ) @Arg )?"` // rename collection/table
-	Verbose     int     `parser:"( ( '-v' | '--verbose' ) @Arg )?"` // handler-local verbosity
+	Passthrough bool
+	Alias       *string
+	Verbose     int
+}
+
+// BaseOptsFrom extracts shared flags from an optparse result map.
+func BaseOptsFrom(m map[string]any) BaseOpts {
+	var bo BaseOpts
+	if v, ok := m["passthrough"].(bool); ok {
+		bo.Passthrough = v
+	}
+	if s, ok := m["alias"].(string); ok && s != "" {
+		bo.Alias = &s
+	}
+	bo.Verbose = optparse.Int(m, "verbose")
+	return bo
 }

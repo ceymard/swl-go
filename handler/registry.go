@@ -39,7 +39,7 @@ func Register(id string, h Handler, m Meta) {
 	metaByID[id] = m
 }
 
-// RegisterParser binds a participle argv parser for a handler id.
+// RegisterParser binds an optparse argv parser for a handler id.
 func RegisterParser(id string, fn func(target string, tail []string) (any, error)) {
 	mu.Lock()
 	defer mu.Unlock()

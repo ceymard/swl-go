@@ -2,65 +2,58 @@ package json
 
 import (
 	"github.com/ceymard/swl-go/internal/cli"
+	"github.com/ceymard/swl-go/internal/optparse"
 )
 
 // SrcOpts is the parsed argv for json-src.
 type SrcOpts struct {
-	File       string // path or inline JSON (from pipeline target)
+	File       string
 	Encoding   *string
 	Collection *string
 	cli.BaseOpts
 }
 
-type srcParser struct {
-	Encoding   *string `parser:"( ( '-e' | '--encoding' ) @Arg )?"`
-	Collection *string `parser:"( ( '-c' | '--collection' ) @Arg )?"`
-	cli.BaseOpts
-}
+var srcParser = optparse.Optparser(
+	optparse.Param("-e", "--encoding").As("encoding"),
+	optparse.Param("-c", "--collection").As("collection"),
+	optparse.Arg("file").Required(),
+).Include(optparse.DefaultOpts)
 
 // ParseSrcOptions parses json-src flags; target is the file path or inline JSON.
 func ParseSrcOptions(target string, tail []string) (any, error) {
-	p, err := cli.BuildParser[srcParser]()
-	if err != nil {
-		return nil, err
-	}
-	o, err := cli.ParseArgs(p, tail)
+	m, err := srcParser.Parse(append([]string{target}, tail...))
 	if err != nil {
 		return nil, err
 	}
 	return SrcOpts{
-		File:       target,
-		Encoding:   o.Encoding,
-		Collection: o.Collection,
-		BaseOpts:   o.BaseOpts,
+		File:       optparse.Str(m, "file"),
+		Encoding:   optparse.StrPtr(m, "encoding"),
+		Collection: optparse.StrPtr(m, "collection"),
+		BaseOpts:   cli.BaseOptsFrom(m),
 	}, nil
 }
 
 // SinkOpts is the parsed argv for json-sink.
 type SinkOpts struct {
-	Path   string // output path (empty → cwd at run time)
-	Object bool   // -o: wrap collections in a JSON object
+	Path   string
+	Object bool
 	cli.BaseOpts
 }
 
-type sinkParser struct {
-	Object bool `parser:"( '-o' | '--object' )?"`
-	cli.BaseOpts
-}
+var sinkParser = optparse.Optparser(
+	optparse.Flag("-o", "--object").As("object"),
+	optparse.Arg("path").Required(),
+).Include(optparse.DefaultOpts)
 
 // ParseSinkOptions parses json-sink flags; target is the output path.
 func ParseSinkOptions(target string, tail []string) (any, error) {
-	p, err := cli.BuildParser[sinkParser]()
-	if err != nil {
-		return nil, err
-	}
-	o, err := cli.ParseArgs(p, tail)
+	m, err := sinkParser.Parse(append([]string{target}, tail...))
 	if err != nil {
 		return nil, err
 	}
 	return SinkOpts{
-		Path:     target,
-		Object:   o.Object,
-		BaseOpts: o.BaseOpts,
+		Path:     optparse.Str(m, "path"),
+		Object:   optparse.Bool(m, "object"),
+		BaseOpts: cli.BaseOptsFrom(m),
 	}, nil
 }

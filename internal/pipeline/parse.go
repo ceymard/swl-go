@@ -22,7 +22,7 @@ type Stage struct {
 	Kind    StageKind
 	ID      string   // handler registry id, e.g. "json-src", "flatten"
 	Tokens  []string // raw argv segment (for error messages)
-	Options any      // typed opts from participle parser
+	Options any      // typed opts from optparse
 }
 
 // Pipeline is the full parsed command.
