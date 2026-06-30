@@ -1,6 +1,6 @@
 // Package json implements json-src and json-sink (swl2 swl-json-src/sink.ts).
 //
-// Source reads JSON5 from a file path or inline `[`/`{` argv. Sink writes JSON (encoding/json; sonic when Go 1.26 support lands).
+// Source reads JSON/JSON5 from a file path or inline `[`/`{` argv. Sink writes JSON via sonic.
 package json
 
 import (

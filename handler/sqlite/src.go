@@ -9,8 +9,6 @@ import (
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/handlers"
-
-	_ "modernc.org/sqlite"
 )
 
 // Source reads tables or queries from a SQLite database file.
@@ -22,7 +20,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 		return nil, errs.New("sqlite source requires a database file path")
 	}
 
-	db, err := sql.Open("sqlite", dsnReadOnly(opts.File))
+	db, err := sql.Open(driverName, dsnReadOnly(opts.File))
 	if err != nil {
 		return nil, errs.Wrap(err, "open sqlite database", "path", opts.File)
 	}
@@ -41,10 +39,6 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}
 
 	return streamTables(ctx, cfg, db, tables), nil
-}
-
-func dsnReadOnly(path string) string {
-	return fmt.Sprintf("file:%s?mode=ro", path)
 }
 
 func listTables(ctx context.Context, db *sql.DB) ([]TableSpec, error) {

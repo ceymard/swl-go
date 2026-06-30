@@ -12,13 +12,13 @@ import (
 	"github.com/ceymard/swl-go/internal/msg"
 	"github.com/ceymard/swl-go/test/swltest"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func createUsersDB(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		t.Fatal(err)
 	}

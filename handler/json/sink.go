@@ -2,7 +2,6 @@ package json
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/handlers"
+	"github.com/ceymard/swl-go/internal/jsonx"
 )
 
 // Sink writes collections to JSON files (swl2 swl-json-sink.ts).
@@ -122,12 +122,12 @@ func writeCollection(w io.Writer, c coll.Collection, objectMode, prefixComma boo
 			return err
 		}
 		if !first {
-			if _, err := io.WriteString(w, ",\n"); err != nil {
-				return err
-			}
+		if _, err := io.WriteString(w, ",\n"); err != nil {
+			return err
+		}
 		}
 		first = false
-		b, err := json.Marshal(row)
+		b, err := jsonx.Marshal(row)
 		if err != nil {
 			return errs.Wrap(err, "marshal json row", "collection", c.Name)
 		}

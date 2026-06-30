@@ -2,13 +2,13 @@ package pg
 
 import (
 	"context"
-	"encoding/json"
 	"iter"
 	"time"
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/handlers"
+	"github.com/ceymard/swl-go/internal/jsonx"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -128,7 +128,7 @@ func maybeParseJSON(v any) any {
 		return v
 	}
 	var out any
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
+	if err := jsonx.Unmarshal([]byte(s), &out); err != nil {
 		return v
 	}
 	return out

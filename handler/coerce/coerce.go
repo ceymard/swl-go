@@ -14,6 +14,7 @@ import (
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
+	"github.com/ceymard/swl-go/internal/jsonx"
 	"github.com/ceymard/swl-go/internal/optparse"
 	"github.com/ceymard/swl-go/internal/stream"
 )
@@ -76,7 +77,7 @@ func Coerce(value any) any {
 		return v.UTC().Format(time.RFC3339Nano)
 	default:
 		// objects/arrays → JSON string
-		b, err := json.Marshal(v)
+		b, err := jsonx.Marshal(v)
 		if err != nil {
 			return value
 		}
@@ -162,7 +163,7 @@ func Uncoerce(value any, opts UncoerceOptions) any {
 	// JSON object/array literal
 	if len(s) > 0 && (s[0] == '{' || s[0] == '[') {
 		var v any
-		if err := json.Unmarshal([]byte(s), &v); err == nil {
+		if err := jsonx.Unmarshal([]byte(s), &v); err == nil {
 			return v
 		}
 	}

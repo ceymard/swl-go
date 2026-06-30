@@ -9,8 +9,6 @@ import (
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/handlers"
-
-	_ "modernc.org/sqlite"
 )
 
 // Sink writes collections into a SQLite database using runner.ConsumeHooks.
@@ -33,16 +31,16 @@ type sinkHooks struct {
 }
 
 func (h *sinkHooks) Init(ctx context.Context) error {
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s", h.opts.File))
+	db, err := sql.Open(driverName, dsnReadWrite(h.opts.File))
 	if err != nil {
 		return errs.Wrap(err, "open sqlite database", "path", h.opts.File)
 	}
 	h.db = db
-	if _, err := h.db.ExecContext(ctx, `PRAGMA journal_mode = wal`); err != nil {
+	if _, err := h.db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
 		_ = db.Close()
 		return errs.Wrap(err, "sqlite pragma journal_mode")
 	}
-	if _, err := h.db.ExecContext(ctx, `PRAGMA synchronous = 0`); err != nil {
+	if _, err := h.db.ExecContext(ctx, `PRAGMA synchronous = NORMAL`); err != nil {
 		_ = db.Close()
 		return errs.Wrap(err, "sqlite pragma synchronous")
 	}
@@ -142,6 +140,7 @@ type rowWriter struct {
 	cols  []string
 	table string
 	cfg   handlers.Config
+	args  []any
 }
 
 func (w *rowWriter) Write(row coll.Row) error {
@@ -163,7 +162,10 @@ func (w *rowWriter) Close() error {
 }
 
 func (w *rowWriter) insert(row coll.Row) error {
-	args := make([]any, len(w.cols))
+	if cap(w.args) < len(w.cols) {
+		w.args = make([]any, len(w.cols))
+	}
+	args := w.args[:len(w.cols)]
 	for i, c := range w.cols {
 		v, err := bindValue(row[c])
 		if err != nil {

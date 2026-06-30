@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — xlsx-src (xlsx/xlsb/xlsm/ods).*
+*Last updated: 2026-06-30 — performance: sonic JSON, go-sqlite3, PG COPY sink.*
 
 ---
 
@@ -13,16 +13,16 @@
 | Core runtime (coll, stream, runner) | ✅ Done |
 | CLI (Kong + pipeline parse + empty handler list + **colors**) | ✅ Done |
 | Transforms (flatten, unflatten, coerce, uncoerce) | ✅ Done |
-| JSON source + sink | ✅ Done |
-| SQLite source + sink | ✅ Done |
+| JSON source + sink | ✅ Done (sonic; streaming array via `decoder.Skip`) |
+| SQLite source + sink | ✅ Done (mattn/go-sqlite3, CGO) |
 | CSV source + sink | ✅ Done |
-| PG source + sink | ✅ Done |
+| PG source + sink | ✅ Done (COPY + json_populate_record) |
 | xlsx source | ✅ Done |
 | mysql, duckdb, yaml, xlsx-sink, parquet, fn | ⏳ Stubs (fail at run) |
 | SSH tunnels | ✅ Done |
-| sonic JSON writer | ⏳ Deferred (Go 1.26 + sonic incompatibility; using `encoding/json`) |
+| sonic JSON I/O | ✅ Done (`internal/jsonx`, json5 fallback on read) |
 
-**Module:** `github.com/ceymard/swl-go` · **Go:** 1.26.4 · **Binary:** `make build` → `./swl`
+**Module:** `github.com/ceymard/swl-go` · **Go:** 1.26.4 · **Binary:** `make build` → `./swl` (requires **CGO** for SQLite)
 
 ---
 
@@ -150,9 +150,10 @@ testdata/csv/            CSV fixture files
 |---------|-----|
 | `github.com/alecthomas/kong` | Global CLI |
 | `github.com/samber/oops` | Error stacks |
-| `github.com/aeolun/json5` | JSON5 source read |
+| `github.com/bytedance/sonic` | JSON marshal/unmarshal/stream (`internal/jsonx`) |
+| `github.com/aeolun/json5` | JSON5 source read (fallback after sonic) |
 | `github.com/fatih/color` | Terminal colors (`internal/style`) |
-| `modernc.org/sqlite` | SQLite driver (pure Go) |
+| `github.com/mattn/go-sqlite3` | SQLite driver (native, CGO) |
 | `github.com/jackc/pgx/v5` | PostgreSQL driver |
 | `golang.org/x/crypto/ssh` | SSH tunnel forwarding |
 | `github.com/kevinburke/ssh_config` | `~/.ssh/config` lookup |
@@ -166,8 +167,7 @@ testdata/csv/            CSV fixture files
 **Policy:** Every new handler, CLI behavior, or pipeline syntax change must ship with tests in the same change — unit tests for parsing/edge cases, integration tests when data flows across stages (`test/swltest` or `handler/*/…_integration_test.go`). Prefer committed fixtures under `testdata/` over generating files only at runtime.
 
 ```bash
-go test ./...
-make test
+CGO_ENABLED=1 go test ./...   # or: make test
 make test-coverage   # per-package coverage summary
 make test-pg   # handler/pg integration (Docker + testcontainers)
 ```
@@ -187,10 +187,9 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 
 ## Next work
 
-1. **PG sink polish** — COPY/json_populate_record path from swl2 (current: INSERT)
-2. **mysql** — database handlers
-3. **sonic sink** — when compatible with Go 1.26
-4. **Polish** — per-handler help, golden vs swl2
+1. **mysql** — database handlers
+2. **duckdb, yaml, xlsx-sink, parquet, fn** — remaining stubs
+3. **Polish** — per-handler help, golden vs swl2
 
 ---
 

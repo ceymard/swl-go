@@ -1,12 +1,12 @@
 package sqlite
 
 import (
-	"encoding/json"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/ceymard/swl-go/internal/coll"
+	"github.com/ceymard/swl-go/internal/jsonx"
 )
 
 // inferColumnType picks a SQLite DDL type from a sample cell value (swl2 sqlite-sink).
@@ -62,7 +62,7 @@ func bindValue(v any) (any, error) {
 		}
 		return int64(0), nil
 	case map[string]any, []any:
-		b, err := json.Marshal(x)
+		b, err := jsonx.Marshal(x)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func maybeParseJSON(v any) any {
 		return v
 	}
 	var out any
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
+	if err := jsonx.Unmarshal([]byte(s), &out); err != nil {
 		return v
 	}
 	return out
