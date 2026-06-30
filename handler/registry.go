@@ -6,6 +6,8 @@ package handler
 
 import (
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 	"sync"
 
@@ -163,19 +165,51 @@ func pickEntry(e aliasEntry, wantSink bool) (string, stage.Kind, bool) {
 	return e.source, stage.Source, true
 }
 
-// ListAliases formats handler names for empty-segment error messages.
+// ListAvailable prints handlers, extensions, and protocols (swl2 empty-command output).
+func ListAvailable() string {
+	var b strings.Builder
+	writeAliasSection(&b, "handlers:\n", aliases)
+	writeAliasSection(&b, "extensions:\n", extensions)
+	writeAliasSection(&b, "protocols:\n", protocols)
+	return b.String()
+}
+
+// WriteAvailable writes ListAvailable to w (stdout in the CLI).
+func WriteAvailable(w io.Writer) {
+	fmt.Fprint(w, ListAvailable())
+}
+
+func writeAliasSection(b *strings.Builder, heading string, m map[string]aliasEntry) {
+	b.WriteString(heading)
+	for _, name := range sortedKeys(m) {
+		fmt.Fprintf(b, "  %s %s\n", aliasSigil(m[name]), name)
+	}
+	b.WriteByte('\n')
+}
+
+func sortedKeys(m map[string]aliasEntry) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// aliasSigil matches swl2 show_aliases: ⇄ both, ← source, → sink.
+func aliasSigil(e aliasEntry) string {
+	if e.source != "" && e.sink != "" {
+		return "⇄"
+	}
+	if e.source != "" {
+		return "←"
+	}
+	return "→"
+}
+
+// ListAliases formats handler names only (legacy helper).
 func ListAliases() string {
 	var b strings.Builder
-	b.WriteString("handlers:\n")
-	for name := range aliases {
-		e := aliases[name]
-		sigil := "→"
-		if e.source != "" && e.sink != "" {
-			sigil = "⇄"
-		} else if e.source != "" {
-			sigil = "←"
-		}
-		fmt.Fprintf(&b, "  %s %s\n", sigil, name)
-	}
-	return b.String()
+	writeAliasSection(&b, "handlers:\n", aliases)
+	return strings.TrimSuffix(b.String(), "\n") + "\n"
 }

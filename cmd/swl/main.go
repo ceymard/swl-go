@@ -38,6 +38,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	// swl2: empty pipeline prints available handlers/extensions/protocols.
+	if len(cli.Pipeline) == 0 {
+		fmt.Fprintln(os.Stderr, "error: a command may not be empty")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "  list of available sources/sinks :")
+		fmt.Fprintln(os.Stderr)
+		handler.WriteAvailable(os.Stdout)
+		os.Exit(1)
+	}
+
 	// Default verbosity 2 (progress); -q → 0; -v/-vv overrides; SWL_VERBOSE env fallback.
 	verbose := 2
 	if cli.Quiet {
