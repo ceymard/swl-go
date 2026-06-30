@@ -17,7 +17,6 @@ var argLexer = lexer.MustSimple([]lexer.SimpleRule{
 func BuildParser[T any]() (*participle.Parser[T], error) {
 	return participle.Build[T](
 		participle.Lexer(argLexer),
-		participle.Unquote("String"),
 	)
 }
 

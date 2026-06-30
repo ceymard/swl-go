@@ -28,7 +28,7 @@ func TestFlattenPipeline(t *testing.T) {
 
 	var got []coll.Row
 	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Rows: &got}, handler.Meta{})
-	handler.RegisterParser(swltest.CollectSinkID, func(argv []string) (any, error) {
+	handler.RegisterParser(swltest.CollectSinkID, func(_ string, _ []string) (any, error) {
 		return struct{}{}, nil
 	})
 

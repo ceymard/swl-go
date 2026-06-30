@@ -27,7 +27,7 @@ var (
 	mu       sync.RWMutex
 	byID     = map[string]Handler{}
 	metaByID = map[string]Meta{}
-	parsers  = map[string]func([]string) (any, error){}
+	parsers  = map[string]func(target string, tail []string) (any, error){}
 )
 
 // Register adds a handler implementation. Called from init() in register.go.
@@ -39,7 +39,7 @@ func Register(id string, h Handler, m Meta) {
 }
 
 // RegisterParser binds a participle argv parser for a handler id.
-func RegisterParser(id string, fn func([]string) (any, error)) {
+func RegisterParser(id string, fn func(target string, tail []string) (any, error)) {
 	mu.Lock()
 	defer mu.Unlock()
 	parsers[id] = fn
@@ -65,17 +65,17 @@ func IsStub(id string) bool {
 	return metaByID[id].Stub
 }
 
-// ParseOptions parses handler-specific flags from the tail of a pipeline segment.
-// Stubs defer the error until Run so `swl file.json :: out.db` can parse and fail clearly.
-func ParseOptions(id string, tail []string) (any, error) {
+// ParseOptions parses handler-specific flags. target is the path/URI (or inline JSON);
+// tail holds remaining argv tokens (flags). Transforms ignore target.
+func ParseOptions(id string, target string, tail []string) (any, error) {
 	if IsStub(id) {
-		return stubOptions{id: id, tail: tail}, nil
+		return stubOptions{id: id, target: target, tail: tail}, nil
 	}
 	p, ok := parsers[id]
 	if !ok {
 		return struct{}{}, nil // handler with no flags (flatten)
 	}
-	return p(tail)
+	return p(target, tail)
 }
 
 // aliasEntry maps a user-facing name to source and/or sink handler ids.

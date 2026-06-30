@@ -54,7 +54,7 @@ func (c RowCollectSink) Sink(ctx context.Context, cfg handlers.Config, in coll.S
 // RegisterHandlers registers mem-src and collect-sink fakes on the global registry.
 func RegisterHandlers() {
 	handler.Register(MemSrcID, MemSource{}, handler.Meta{})
-	handler.RegisterParser(MemSrcID, func(argv []string) (any, error) {
+	handler.RegisterParser(MemSrcID, func(_ string, _ []string) (any, error) {
 		return MemOptions{}, nil
 	})
 }

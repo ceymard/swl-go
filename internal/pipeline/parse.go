@@ -1,9 +1,3 @@
-// Package pipeline parses the swl CLI argv into ordered stages.
-//
-// Example: swl users.json ++ orders.csv :: flatten :: app.db
-//
-//	segments: [users.json] [orders.csv] [flatten] [app.db]
-//	kinds:    source       source       transform sink
 package pipeline
 
 import (
@@ -63,7 +57,8 @@ func Parse(argv []string, verbose int) (Pipeline, error) {
 			kind = StageSink // e.g. out.json resolved as json-src id but used as sink
 		}
 
-		opts, err := handler.ParseOptions(id, seg.tokens[1:])
+		target, tail := stageTarget(seg.tokens, id, kind)
+		opts, err := handler.ParseOptions(id, target, tail)
 		if err != nil {
 			return Pipeline{}, errs.Wrap(err, "parse options", "handler", id)
 		}
@@ -77,6 +72,28 @@ func Parse(argv []string, verbose int) (Pipeline, error) {
 	}
 
 	return Pipeline{Stages: stages, Verbose: verbose}, nil
+}
+
+// stageTarget extracts the path/URI (target) and flag tail from a segment.
+//
+//	flatten -o x     → target="", tail=[-o,x]
+//	data.json        → target=data.json, tail=[]
+//	json data.json   → target=data.json, tail=[]
+func stageTarget(tokens []string, id string, kind StageKind) (target string, tail []string) {
+	if len(tokens) == 0 {
+		return "", nil
+	}
+	if handler.IsTransformOnly(id) {
+		return "", tokens[1:]
+	}
+	wantSink := kind == StageSink
+	if _, _, ok := handler.ResolveAlias(tokens[0], wantSink); ok {
+		if len(tokens) > 1 {
+			return tokens[1], tokens[2:]
+		}
+		return "", tokens[1:]
+	}
+	return tokens[0], tokens[1:]
 }
 
 // segment is one argv chunk between :: or ++ separators.
@@ -123,7 +140,7 @@ func splitSegments(argv []string) ([]segment, error) {
 }
 
 // resolveHandler maps the first token of a segment to a handler id.
-// Order: alias name, file extension, URI protocol prefix.
+// Order: alias name, file extension, URI protocol prefix, inline JSON.
 func resolveHandler(target string, wantSink bool) (id string, kind StageKind, err error) {
 	if h, k, ok := handler.ResolveAlias(target, wantSink); ok {
 		return h, k, nil
@@ -137,6 +154,10 @@ func resolveHandler(target string, wantSink bool) (id string, kind StageKind, er
 		if h, k, ok := handler.ResolveProtocol(proto, wantSink); ok {
 			return h, k, nil
 		}
+	}
+	// Inline JSON literal as source (swl2 passes through unmatched tokens).
+	if !wantSink && len(target) > 0 && (target[0] == '[' || target[0] == '{') {
+		return "json-src", StageSource, nil
 	}
 	return "", 0, errs.New("cannot resolve handler for " + target)
 }

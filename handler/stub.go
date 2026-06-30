@@ -14,8 +14,9 @@ type stubHandler struct{ id string }
 
 // stubOptions preserves argv for future parse-on-run if needed.
 type stubOptions struct {
-	id   string
-	tail []string
+	id     string
+	target string
+	tail   []string
 }
 
 func (s stubHandler) Source(ctx context.Context, cfg handlers.Config, opts any) (coll.Stream, error) {
