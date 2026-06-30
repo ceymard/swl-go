@@ -124,3 +124,25 @@ func TestXLSXFixtureODS(t *testing.T) {
 		t.Fatalf("snaps %+v", snaps)
 	}
 }
+
+func TestXLSXSinkRoundTripPipeline(t *testing.T) {
+	swltest.RegisterHandlers()
+
+	xlsxPath := filepath.Join("..", "..", "testdata", "xlsx", "simple.xlsx")
+	outPath := filepath.Join(t.TempDir(), "out.xlsx")
+
+	p, err := pipeline.Parse([]string{xlsxPath, "::", outPath}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Stages) != 2 || p.Stages[1].ID != "xlsx-sink" {
+		t.Fatalf("stages %+v", p.Stages)
+	}
+	cfg := handlers.Config{Ctx: context.Background()}
+	if err := runner.Run(cfg, handler.Reg, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(outPath); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -32,6 +32,34 @@ var sheetParser = optparse.Optparser(
 	optparse.Arg("name").Required(),
 ).Include(sheetFlags)
 
+// SinkOpts is parsed argv for xlsx-sink.
+type SinkOpts struct {
+	File       string
+	Uncompress bool
+	cli.BaseOpts
+}
+
+var sinkParser = optparse.Optparser(
+	optparse.Arg("file").Required(),
+	optparse.Flag("-u", "--uncompress").As("uncompress").Help("Disable XLSX compression (ignored; excelize always compresses)"),
+).Include(optparse.DefaultOpts)
+
+// SinkOptParser returns the optparse parser for xlsx-sink.
+func SinkOptParser() *optparse.Parser { return sinkParser }
+
+// ParseSinkOptions parses xlsx-sink flags; target is the output file path.
+func ParseSinkOptions(target string, tail []string) (any, error) {
+	m, err := sinkParser.Parse(append([]string{target}, tail...))
+	if err != nil {
+		return nil, err
+	}
+	return SinkOpts{
+		File:       optparse.Str(m, "file"),
+		Uncompress: optparse.Bool(m, "uncompress"),
+		BaseOpts:   cli.BaseOptsFrom(m),
+	}, nil
+}
+
 var srcParser = optparse.Optparser(
 	optparse.Arg("file").Required(),
 ).Include(sheetFlags).Include(optparse.DefaultOpts).AddHandler(

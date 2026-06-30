@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — performance: sonic JSON, go-sqlite3, PG COPY sink.*
+*Last updated: 2026-06-30 — xlsx-sink.*
 
 ---
 
@@ -17,8 +17,7 @@
 | SQLite source + sink | ✅ Done (mattn/go-sqlite3, CGO) |
 | CSV source + sink | ✅ Done |
 | PG source + sink | ✅ Done (COPY + json_populate_record) |
-| xlsx source | ✅ Done |
-| mysql, duckdb, yaml, xlsx-sink, parquet, fn | ⏳ Stubs (fail at run) |
+| xlsx source + sink | ✅ Done (src: xlsx/xlsm excelize, xlsb go-xlsb, ods; sink: xlsx/xlsm excelize) |
 | SSH tunnels | ✅ Done |
 | sonic JSON I/O | ✅ Done (`internal/jsonx`, json5 fallback on read) |
 
@@ -112,7 +111,8 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, `-s` schema FK order, `-q`, `.*` wildcard |
 | `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
 | `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsm via excelize, **xlsb via go-xlsb**, ods via knieriem/odf; sheets, `-r/-e/-i` |
-| others | — | stub | mysql, duckdb, yaml, xlsx-sink, parquet, fn |
+| `xlsx-sink` | `handler/xlsx` | ✅ | one sheet per collection, merges into existing workbook, `-u` (no-op) |
+| others | — | stub | mysql, duckdb, yaml, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -189,7 +189,7 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 ## Next work
 
 1. **mysql** — database handlers
-2. **duckdb, yaml, xlsx-sink, parquet, fn** — remaining stubs
+2. **duckdb, yaml, parquet, fn** — remaining stubs
 3. **Polish** — per-handler help, golden vs swl2
 
 ---
@@ -202,7 +202,7 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 - CSV sink default delimiter is `;` (swl2 parity); source default is `,`
 - SSH tunnel uses `InsecureIgnoreHostKey` (match swl2/node-ssh; use known_hosts for production)
 - Legacy `.xls` (BIFF) not supported; use `.xlsx` or `.xlsb`
-- xlsx-sink still stub
+- xlsx-sink writes `.xlsx`/`.xlsm` only (not `.xlsb`/`.ods`)
 - Multi-collection single-file json sink (non-`-o`) emits concatenated arrays (swl2 parity)
 
 ---

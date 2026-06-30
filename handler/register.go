@@ -64,6 +64,9 @@ func init() {
 	Register("xlsx-src", xlsx.Source{}, Meta{})
 	RegisterParser("xlsx-src", xlsx.ParseSrcOptions)
 	RegisterOptParser("xlsx-src", xlsx.SrcOptParser())
+	Register("xlsx-sink", xlsx.Sink{}, Meta{})
+	RegisterParser("xlsx-sink", xlsx.ParseSinkOptions)
+	RegisterOptParser("xlsx-sink", xlsx.SinkOptParser())
 
 	registerStubs()
 }
@@ -73,7 +76,7 @@ func registerStubs() {
 	stubs := []string{
 		"my-src",
 		"duckdb-src", "duckdb-sink",
-		"xlsx-sink", "yaml-src", "yaml-sink",
+		"yaml-src", "yaml-sink",
 		"parquet-src", "parquet-sink", "fn",
 	}
 	for _, id := range stubs {
