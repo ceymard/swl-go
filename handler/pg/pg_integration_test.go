@@ -136,6 +136,21 @@ func TestIntegrationSourceSchemaFKOrder(t *testing.T) {
 	}
 }
 
+func TestIntegrationSourceNativeTypes(t *testing.T) {
+	uri := startPostgres(t)
+	snaps := collectSource(t, uri, "-s", "app", "app.accounts")
+	if len(snaps[0].Rows) == 0 {
+		t.Fatal("no rows")
+	}
+	id := snaps[0].Rows[0]["id"]
+	switch id.(type) {
+	case int32, int64, int:
+		// native integer from pgx, not json float64
+	default:
+		t.Fatalf("expected native int id, got %T (%v)", id, id)
+	}
+}
+
 func TestIntegrationSourceDefaultPublicSchema(t *testing.T) {
 	uri := startPostgres(t)
 	snaps := collectSource(t, uri)

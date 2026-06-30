@@ -297,6 +297,12 @@ func bindValue(v any) (any, error) {
 			return nil, err
 		}
 		return string(b), nil
+	case int:
+		return strconv.Itoa(x), nil
+	case int32:
+		return strconv.FormatInt(int64(x), 10), nil
+	case int64:
+		return strconv.FormatInt(x, 10), nil
 	case float64:
 		if x == float64(int64(x)) {
 			return strconv.FormatInt(int64(x), 10), nil

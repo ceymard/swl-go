@@ -3,8 +3,8 @@ package pg
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"iter"
+	"time"
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
@@ -59,11 +59,9 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 		defer tun.Close()
 
 		for _, spec := range sources {
-			sqlText := querySQL(spec)
-			wrapped := fmt.Sprintf(`SELECT row_to_json(Q) AS row FROM (%s) Q`, sqlText)
 			c := coll.Collection{
 				Name: spec.Name,
-				Rows: jsonRows(ctx, pool, wrapped),
+				Rows: queryRows(ctx, pool, querySQL(spec)),
 			}
 			if !yield(c, nil) {
 				return
@@ -75,7 +73,7 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 	}
 }
 
-func jsonRows(ctx context.Context, pool interface {
+func queryRows(ctx context.Context, pool interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }, query string) iter.Seq2[coll.Row, error] {
 	return func(yield func(coll.Row, error) bool) {
@@ -87,15 +85,14 @@ func jsonRows(ctx context.Context, pool interface {
 		defer rows.Close()
 
 		for rows.Next() {
-			var rowJSON []byte
-			if err := rows.Scan(&rowJSON); err != nil {
+			raw, err := pgx.RowToMap(rows)
+			if err != nil {
 				yield(nil, errs.Wrap(err, "postgres scan row"))
 				return
 			}
-			var row map[string]any
-			if err := json.Unmarshal(rowJSON, &row); err != nil {
-				yield(nil, errs.Wrap(err, "postgres decode row json"))
-				return
+			row := make(coll.Row, len(raw))
+			for k, v := range raw {
+				row[k] = normalizePGCell(v)
 			}
 			if !yield(row, nil) {
 				return
@@ -105,4 +102,34 @@ func jsonRows(ctx context.Context, pool interface {
 			yield(nil, errs.Wrap(err, "postgres rows"))
 		}
 	}
+}
+
+// normalizePGCell maps pgx driver values to coll.Row cells (native ints, times, …).
+func normalizePGCell(v any) any {
+	if v == nil {
+		return nil
+	}
+	switch x := v.(type) {
+	case []byte:
+		return maybeParseJSON(string(x))
+	case time.Time:
+		return x.UTC()
+	default:
+		return v
+	}
+}
+
+func maybeParseJSON(v any) any {
+	s, ok := v.(string)
+	if !ok || len(s) == 0 {
+		return v
+	}
+	if s[0] != '{' && s[0] != '[' {
+		return v
+	}
+	var out any
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return v
+	}
+	return out
 }
