@@ -6,6 +6,7 @@ import (
 	"github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/duckdb"
 	"github.com/ceymard/swl-go/handler/json"
+	"github.com/ceymard/swl-go/handler/mssql"
 	"github.com/ceymard/swl-go/handler/mysql"
 	"github.com/ceymard/swl-go/handler/pg"
 	"github.com/ceymard/swl-go/handler/parquet"
@@ -94,6 +95,14 @@ func init() {
 	Register("my-sink", mysql.Sink{}, Meta{})
 	RegisterParser("my-sink", mysql.ParseSinkOptions)
 	RegisterOptParser("my-sink", mysql.SinkOptParser())
+
+	// Microsoft SQL Server source + sink.
+	Register("mssql-src", mssql.Source{}, Meta{})
+	RegisterParser("mssql-src", mssql.ParseSrcOptions)
+	RegisterOptParser("mssql-src", mssql.SrcOptParser())
+	Register("mssql-sink", mssql.Sink{}, Meta{})
+	RegisterParser("mssql-sink", mssql.ParseSinkOptions)
+	RegisterOptParser("mssql-sink", mssql.SinkOptParser())
 
 	registerStubs()
 }

@@ -90,6 +90,8 @@ var (
 	aliases = map[string]aliasEntry{
 		"pg": {"pg-src", "pg-sink"}, "postgres": {"pg-src", "pg-sink"},
 		"mysql": {"my-src", "my-sink"}, "my": {"my-src", "my-sink"},
+		"mssql": {"mssql-src", "mssql-sink"}, "ms": {"mssql-src", "mssql-sink"},
+		"sqlserver": {"mssql-src", "mssql-sink"},
 		"sqlite": {"sqlite-src", "sqlite-sink"},
 		"duckdb": {"duckdb-src", "duckdb-sink"},
 		"xl": {"xlsx-src", "xlsx-sink"}, "xls": {"xlsx-src", "xlsx-sink"},
@@ -117,6 +119,8 @@ var (
 	protocols = map[string]aliasEntry{
 		"postgres://": {"pg-src", "pg-sink"},
 		"mysql://":    {"my-src", "my-sink"},
+		"sqlserver://": {"mssql-src", "mssql-sink"},
+		"mssql://":     {"mssql-src", "mssql-sink"},
 	}
 )
 

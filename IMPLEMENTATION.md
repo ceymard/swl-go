@@ -131,6 +131,8 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `duckdb-sink` | `handler/duckdb` | ✅ | `-t/-d/-u`, JSON batch insert via `from_json`; `schema.table` collections |
 | `my-src` | `handler/mysql` | ✅ | URI + SSH `@@`, auto tables, `-q`; JSON columns parsed to nested maps/slices |
 | `my-sink` | `handler/mysql` | ✅ | batched INSERT (512 rows), `-t/-d/-u/-a`; JSON DDL for nested values |
+| `mssql-src` | `handler/mssql` | ✅ | URI + SSH `@@`, auto schema.table list, `-q`; JSON NVARCHAR parsed |
+| `mssql-sink` | `handler/mssql` | ✅ | batched INSERT/MERGE (512 rows), `-t/-d/-u/-a`; IDENTITY_INSERT when needed |
 | others | — | stub | yaml, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
@@ -155,7 +157,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/, mysql/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/, mysql/, mssql/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -182,6 +184,7 @@ testdata/csv/            CSV fixture files
 | `github.com/parquet-go/parquet-go` | Parquet read/write (no DuckDB) |
 | `github.com/duckdb/duckdb-go/v2` | DuckDB read/write (CGO) |
 | `github.com/go-sql-driver/mysql` | MySQL read/write (pure Go) |
+| `github.com/microsoft/go-mssqldb` | Microsoft SQL Server read/write (pure Go) |
 
 ---
 
@@ -194,6 +197,7 @@ CGO_ENABLED=1 go test ./...   # or: make test
 make test-coverage   # per-package coverage summary
 make test-pg   # handler/pg integration (Docker + testcontainers)
 make test-mysql   # handler/mysql integration (Docker + testcontainers)
+make test-mssql   # handler/mssql integration (Docker + testcontainers)
 ```
 
 Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg/mysql tests.
