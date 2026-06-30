@@ -228,6 +228,8 @@ func openWorkbook(path string) (sheetReader, error) {
 	switch ext {
 	case ".ods":
 		return openODS(path)
+	case ".xlsb":
+		return openXLSB(path)
 	case ".xls":
 		return nil, errs.New("legacy .xls (BIFF) is not supported; use .xlsx or .xlsb")
 	default:

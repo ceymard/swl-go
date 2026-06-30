@@ -62,6 +62,38 @@ func TestXLSXToSQLitePipeline(t *testing.T) {
 	}
 }
 
+func TestXLSXFixtureXLSB(t *testing.T) {
+	swltest.RegisterHandlers()
+	path := filepath.Join("..", "..", "testdata", "xlsx", "simple.xlsb")
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("xlsb fixture missing")
+	}
+	p, err := pipeline.Parse([]string{path}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Stages[0].ID != "xlsx-src" {
+		t.Fatalf("stage %s", p.Stages[0].ID)
+	}
+	cfg := handlers.Config{Ctx: context.Background()}
+	h, ok := handler.Get("xlsx-src")
+	if !ok {
+		t.Fatal("xlsx-src not registered")
+	}
+	src := h.(handlers.Source)
+	s, err := src.Source(context.Background(), cfg, p.Stages[0].Options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := swltest.CollectStream(t, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("snaps %+v", snaps)
+	}
+}
+
 func TestXLSXFixtureODS(t *testing.T) {
 	path := filepath.Join("..", "..", "testdata", "xlsx", "simple.ods")
 	if _, err := os.Stat(path); err != nil {

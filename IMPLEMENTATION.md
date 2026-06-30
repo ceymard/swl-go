@@ -111,7 +111,7 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `csv-sink` | `handler/csv` | ✅ | `-d` (default `;`), dir / `%` / `.csv` paths |
 | `pg-src` | `handler/pg` | ✅ | URI + SSH `@@`, `-s` schema FK order, `-q`, `.*` wildcard |
 | `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
-| `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsb/xlsm via excelize, ods via knieriem/odf; sheets, `-r/-e/-i` |
+| `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsm via excelize, **xlsb via go-xlsb**, ods via knieriem/odf; sheets, `-r/-e/-i` |
 | others | — | stub | mysql, duckdb, yaml, xlsx-sink, parquet, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
@@ -157,7 +157,8 @@ testdata/csv/            CSV fixture files
 | `github.com/jackc/pgx/v5` | PostgreSQL driver |
 | `golang.org/x/crypto/ssh` | SSH tunnel forwarding |
 | `github.com/kevinburke/ssh_config` | `~/.ssh/config` lookup |
-| `github.com/xuri/excelize/v2` | xlsx/xlsb/xlsm read |
+| `github.com/xuri/excelize/v2` | xlsx/xlsm read |
+| `github.com/TsubasaBE/go-xlsb` | xlsb read |
 | `github.com/knieriem/odf` | ODS read |
 
 ---

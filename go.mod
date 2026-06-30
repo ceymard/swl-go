@@ -3,6 +3,7 @@ module github.com/ceymard/swl-go
 go 1.26.4
 
 require (
+	github.com/TsubasaBE/go-xlsb v1.1.1
 	github.com/aeolun/json5 v1.0.3
 	github.com/alecthomas/kong v1.15.0
 	github.com/bytedance/sonic v1.15.2
