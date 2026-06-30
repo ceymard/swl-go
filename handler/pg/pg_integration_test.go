@@ -2,6 +2,7 @@ package pg_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ceymard/swl-go/handler/pg"
+	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
 	"github.com/ceymard/swl-go/internal/msg"
@@ -20,6 +22,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -424,6 +428,59 @@ func TestIntegrationSinkRoundTrip(t *testing.T) {
 		if len(mirrorSnaps[i].Rows) != len(srcSnaps[i].Rows) {
 			t.Fatalf("collection %d rows: mirror=%d src=%d", i, len(mirrorSnaps[i].Rows), len(srcSnaps[i].Rows))
 		}
+	}
+}
+
+func TestIntegrationSQLiteTextArrayToPG(t *testing.T) {
+	uri := startPostgres(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	execSQL(t, ctx, uri, `DROP SCHEMA IF EXISTS api CASCADE`)
+	execSQL(t, ctx, uri, `CREATE SCHEMA api`)
+	execSQL(t, ctx, uri, `CREATE TABLE api.targets (
+		id int PRIMARY KEY,
+		tags text[] NOT NULL
+	)`)
+
+	path := filepath.Join(t.TempDir(), "targets.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE "api.targets" (id INTEGER PRIMARY KEY, tags text[] NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO "api.targets" (id, tags) VALUES (1, '["alpha","beta"]')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	srcOpts, err := sqlite.ParseSrcOptions(path, []string{"api.targets"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := sqlite.Source{}.Source(ctx, handlers.Config{}, srcOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sinkOpts, err := pg.ParseSinkOptions(uri, []string{"-s", "api", "-u"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := pg.Sink{}
+	if err := sink.Sink(ctx, handlersConfig(), in, sinkOpts); err != nil {
+		t.Fatal(err)
+	}
+
+	snaps := collectSource(t, uri, "-s", "api", "api.targets")
+	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
+		t.Fatalf("got %+v", snaps)
+	}
+	tags, ok := snaps[0].Rows[0]["tags"].([]any)
+	if !ok || !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
+		t.Fatalf("tags %#v", snaps[0].Rows[0]["tags"])
 	}
 }
 

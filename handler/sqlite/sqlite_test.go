@@ -81,6 +81,45 @@ func TestSinkRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSourceDeclaredJSONColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "arrays.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE items (id INTEGER PRIMARY KEY, tags text[], note TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO items (id, tags, note) VALUES (1, '["alpha","beta"]', '["ignored"]')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	opts, err := sqlite.ParseSrcOptions(path, []string{"items"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := sqlite.Source{}.Source(context.Background(), handlers.Config{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := swltest.CollectStream(t, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := snaps[0].Rows[0]
+	tags, ok := row["tags"].([]any)
+	if !ok {
+		t.Fatalf("tags type %T value %#v", row["tags"], row["tags"])
+	}
+	if len(tags) != 2 || tags[0] != "alpha" || tags[1] != "beta" {
+		t.Fatalf("tags %#v", tags)
+	}
+	if note, ok := row["note"].(string); !ok || note != `["ignored"]` {
+		t.Fatalf("note %#v", row["note"])
+	}
+}
+
 func TestJSONToSQLite(t *testing.T) {
 	jsonPath := filepath.Join("..", "..", "testdata", "json", "simple.json")
 	outPath := filepath.Join(t.TempDir(), "out.db")

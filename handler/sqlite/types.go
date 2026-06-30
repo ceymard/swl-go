@@ -3,6 +3,7 @@ package sqlite
 import (
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ceymard/swl-go/internal/coll"
@@ -72,8 +73,22 @@ func bindValue(v any) (any, error) {
 	}
 }
 
-// maybeParseJSON unmarshals string cells that look like JSON objects/arrays.
-func maybeParseJSON(v any) any {
+// isDeclaredJSONColumnType reports whether a SQLite declared column type should
+// have JSON object/array strings parsed on read (swl2 swl-sqlite-src.ts).
+func isDeclaredJSONColumnType(declType string) bool {
+	if declType == "" {
+		return false
+	}
+	t := strings.ToLower(declType)
+	return strings.HasPrefix(t, "struct") ||
+		strings.HasPrefix(t, "union") ||
+		strings.Contains(t, "[") ||
+		strings.Contains(t, "(") ||
+		strings.Contains(t, "json")
+}
+
+// parseJSONCellValue unmarshals string cells that look like JSON objects/arrays.
+func parseJSONCellValue(v any) any {
 	s, ok := v.(string)
 	if !ok || len(s) == 0 {
 		return v
