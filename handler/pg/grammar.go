@@ -31,6 +31,12 @@ var srcParser = optparse.Optparser(
 	optparse.Oneof(srcItemParser).As("sources").Repeat(),
 )
 
+// SrcOptParser returns the optparse parser for pg-src.
+func SrcOptParser() *optparse.Parser { return srcParser }
+
+// SinkOptParser returns the optparse parser for pg-sink.
+func SinkOptParser() *optparse.Parser { return sinkParser }
+
 // ParseSrcOptions parses pg-src flags; target is the postgres URI.
 func ParseSrcOptions(target string, tail []string) (any, error) {
 	m, err := srcParser.Parse(append([]string{target}, tail...))

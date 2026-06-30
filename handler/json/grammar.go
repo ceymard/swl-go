@@ -19,6 +19,12 @@ var srcParser = optparse.Optparser(
 	optparse.Arg("file").Required(),
 ).Include(optparse.DefaultOpts)
 
+// SrcOptParser returns the optparse parser for json-src.
+func SrcOptParser() *optparse.Parser { return srcParser }
+
+// SinkOptParser returns the optparse parser for json-sink.
+func SinkOptParser() *optparse.Parser { return sinkParser }
+
 // ParseSrcOptions parses json-src flags; target is the file path or inline JSON.
 func ParseSrcOptions(target string, tail []string) (any, error) {
 	m, err := srcParser.Parse(append([]string{target}, tail...))

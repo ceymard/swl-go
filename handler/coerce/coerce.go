@@ -28,6 +28,9 @@ var coerceParser = optparse.Optparser(
 	optparse.Param("-o", "--only-columns").As("only"),
 )
 
+// OptParser returns the optparse parser for coerce.
+func OptParser() *optparse.Parser { return coerceParser }
+
 func ParseOptions(argv []string) (any, error) {
 	m, err := coerceParser.Parse(argv)
 	if err != nil {
@@ -98,6 +101,9 @@ var uncoerceParser = optparse.Optparser(
 	optparse.Flag("-t", "--trim").As("trim"),
 	optparse.Flag("-n", "--empty-is-null").As("empty_is_null"),
 )
+
+// OptParser returns the optparse parser for uncoerce.
+func UncoerceOptParser() *optparse.Parser { return uncoerceParser }
 
 func ParseUncoerceOptions(argv []string) (any, error) {
 	m, err := uncoerceParser.Parse(argv)

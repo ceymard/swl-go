@@ -24,6 +24,12 @@ var srcParser = optparse.Optparser(
 	optparse.Oneof(optparse.DefaultColSQLOpts).As("collections").Repeat(),
 )
 
+// SrcOptParser returns the optparse parser for sqlite-src (help text).
+func SrcOptParser() *optparse.Parser { return srcParser }
+
+// SinkOptParser returns the optparse parser for sqlite-sink (help text).
+func SinkOptParser() *optparse.Parser { return sinkParser }
+
 // ParseSrcOptions parses sqlite-src flags; target is the database file path.
 func ParseSrcOptions(target string, tail []string) (any, error) {
 	m, err := srcParser.Parse(append([]string{target}, tail...))

@@ -51,7 +51,8 @@ func (p *Parser) Parse(argv []string) (map[string]any, error) {
 
 func (p *Parser) doScan(args []string, pos int, ctx *parseCtx) (*scanResult, error) {
 	mapres := make(map[*Handler][][]string)
-	for _, h := range p.handlers {
+	handlers := scanHandlers(p)
+	for _, h := range handlers {
 		mapres[h] = nil
 	}
 
@@ -59,7 +60,7 @@ func (p *Parser) doScan(args []string, pos int, ctx *parseCtx) (*scanResult, err
 	init := pos
 scanargs:
 	for pos < l {
-		for _, h := range p.handlers {
+		for _, h := range handlers {
 			acc := mapres[h]
 			var consumed []string
 			var err error
@@ -113,7 +114,7 @@ func (h *Handler) scanOneof(args []string, pos int, ctx *parseCtx) ([]string, er
 
 func (p *Parser) doValues(mapres map[*Handler][][]string, ctx *parseCtx) (map[string]any, error) {
 	res := make(map[string]any)
-	for _, h := range p.handlers {
+	for _, h := range scanHandlers(p) {
 		groups := mapres[h]
 		if groups == nil {
 			groups = [][]string{}
@@ -137,6 +138,9 @@ func (p *Parser) doValues(mapres map[*Handler][][]string, ctx *parseCtx) (map[st
 		if h.Key != "" {
 			res[h.Key] = v
 		}
+	}
+	if Bool(res, "__help") {
+		return res, &HelpError{Parser: p}
 	}
 	return res, nil
 }

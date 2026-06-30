@@ -17,36 +17,47 @@ func init() {
 
 	Register("unflatten", unflatten.Transform{}, Meta{TransformOnly: true})
 	RegisterParser("unflatten", func(_ string, tail []string) (any, error) { return unflatten.ParseOptions(tail) })
+	RegisterOptParser("unflatten", unflatten.OptParser())
 
 	Register("coerce", coerce.Transform{}, Meta{TransformOnly: true})
 	RegisterParser("coerce", func(_ string, tail []string) (any, error) { return coerce.ParseOptions(tail) })
+	RegisterOptParser("coerce", coerce.OptParser())
 
 	Register("uncoerce", coerce.UncoerceTransform{}, Meta{TransformOnly: true})
 	RegisterParser("uncoerce", func(_ string, tail []string) (any, error) { return coerce.ParseUncoerceOptions(tail) })
+	RegisterOptParser("uncoerce", coerce.UncoerceOptParser())
 
 	// JSON source + sink (swl2 swl-json-src/sink.ts).
 	Register("json-src", json.Source{}, Meta{})
 	RegisterParser("json-src", json.ParseSrcOptions)
+	RegisterOptParser("json-src", json.SrcOptParser())
 	Register("json-sink", json.Sink{}, Meta{})
 	RegisterParser("json-sink", json.ParseSinkOptions)
+	RegisterOptParser("json-sink", json.SinkOptParser())
 
 	// SQLite source + sink (swl2 swl-sqlite-src/sink.ts).
 	Register("sqlite-src", sqlite.Source{}, Meta{})
 	RegisterParser("sqlite-src", sqlite.ParseSrcOptions)
+	RegisterOptParser("sqlite-src", sqlite.SrcOptParser())
 	Register("sqlite-sink", sqlite.Sink{}, Meta{})
 	RegisterParser("sqlite-sink", sqlite.ParseSinkOptions)
+	RegisterOptParser("sqlite-sink", sqlite.SinkOptParser())
 
 	// CSV source + sink (swl2 swl-csv-src/sink.ts).
 	Register("csv-src", csv.Source{}, Meta{})
 	RegisterParser("csv-src", csv.ParseSrcOptions)
+	RegisterOptParser("csv-src", csv.SrcOptParser())
 	Register("csv-sink", csv.Sink{}, Meta{})
 	RegisterParser("csv-sink", csv.ParseSinkOptions)
+	RegisterOptParser("csv-sink", csv.SinkOptParser())
 
 	// PostgreSQL source + sink (swl2 swl-pg-src/sink.ts).
 	Register("pg-src", pg.Source{}, Meta{})
 	RegisterParser("pg-src", pg.ParseSrcOptions)
+	RegisterOptParser("pg-src", pg.SrcOptParser())
 	Register("pg-sink", pg.Sink{}, Meta{})
 	RegisterParser("pg-sink", pg.ParseSinkOptions)
+	RegisterOptParser("pg-sink", pg.SinkOptParser())
 
 	registerStubs()
 }

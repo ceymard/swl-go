@@ -23,6 +23,9 @@ var optsParser = optparse.Optparser(
 	optparse.Flag("-n", "--no-empty").As("noempty"),
 )
 
+// OptParser returns the optparse parser for unflatten.
+func OptParser() *optparse.Parser { return optsParser }
+
 func ParseOptions(argv []string) (any, error) {
 	m, err := optsParser.Parse(argv)
 	if err != nil {

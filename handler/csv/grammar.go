@@ -57,6 +57,12 @@ var sinkParser = optparse.Optparser(
 	optparse.Flag("-n", "--no-headers").As("no_headers"),
 ).Include(optparse.DefaultOpts)
 
+// SrcOptParser returns the optparse parser for csv-src.
+func SrcOptParser() *optparse.Parser { return srcParser }
+
+// SinkOptParser returns the optparse parser for csv-sink.
+func SinkOptParser() *optparse.Parser { return sinkParser }
+
 // ParseSrcOptions parses csv-src argv; target is the first file path.
 func ParseSrcOptions(target string, tail []string) (any, error) {
 	m, err := srcParser.Parse(append([]string{target}, tail...))

@@ -39,6 +39,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	if text, ok, err := handler.HelpForArgv(cli.Pipeline, "swl"); ok {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		handler.WriteHelp(text)
+		os.Exit(0)
+	}
+
 	// swl2: empty pipeline prints available handlers/extensions/protocols.
 	if len(cli.Pipeline) == 0 {
 		c := style.Enabled(os.Stderr)
