@@ -13,6 +13,7 @@ import (
 	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/handler/unflatten"
 	"github.com/ceymard/swl-go/handler/xlsx"
+	"github.com/ceymard/swl-go/handler/yaml"
 )
 
 func init() {
@@ -104,13 +105,20 @@ func init() {
 	RegisterParser("mssql-sink", mssql.ParseSinkOptions)
 	RegisterOptParser("mssql-sink", mssql.SinkOptParser())
 
+	// YAML source + sink (swl2 swl-yaml-src/sink.ts; !!e eval via goja).
+	Register("yaml-src", yaml.Source{}, Meta{})
+	RegisterParser("yaml-src", yaml.ParseSrcOptions)
+	RegisterOptParser("yaml-src", yaml.SrcOptParser())
+	Register("yaml-sink", yaml.Sink{}, Meta{})
+	RegisterParser("yaml-sink", yaml.ParseSinkOptions)
+	RegisterOptParser("yaml-sink", yaml.SinkOptParser())
+
 	registerStubs()
 }
 
 // registerStubs wires placeholder handlers for not-yet-ported swl2 scripts.
 func registerStubs() {
 	stubs := []string{
-		"yaml-src", "yaml-sink",
 		"fn",
 	}
 	for _, id := range stubs {

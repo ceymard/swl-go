@@ -1,0 +1,14 @@
+__refs__:
+  - kind: template
+    name: base
+
+static:
+  - id: 1
+    label: fixed
+
+generated:
+  - !!e |
+      function(refs, push) {
+        push({ id: 2, label: "from-js", ref: refs.__refs__[0].name });
+        push({ id: 3, label: "also-js", __meta__: { source: "gen" } });
+      }

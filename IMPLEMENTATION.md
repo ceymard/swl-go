@@ -133,7 +133,9 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `my-sink` | `handler/mysql` | ✅ | batched INSERT (512 rows), `-t/-d/-u/-a`; JSON DDL for nested values |
 | `mssql-src` | `handler/mssql` | ✅ | URI + SSH `@@`, auto schema.table list, `-q`; JSON NVARCHAR parsed |
 | `mssql-sink` | `handler/mssql` | ✅ | batched INSERT/MERGE (512 rows), `-t/-d/-u/-a`; IDENTITY_INSERT when needed |
-| others | — | stub | yaml, fn |
+| `yaml-src` | `handler/yaml` | ✅ | `-c`/`-e`; mapping or array root; `!!e` JS eval (goja); generator fns |
+| `yaml-sink` | `handler/yaml` | ✅ | file / dir / `%` paths; JSON rows under collection keys |
+| others | — | stub | fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -157,7 +159,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/, mysql/, mssql/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/, mysql/, mssql/, yaml/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -185,6 +187,8 @@ testdata/csv/            CSV fixture files
 | `github.com/duckdb/duckdb-go/v2` | DuckDB read/write (CGO) |
 | `github.com/go-sql-driver/mysql` | MySQL read/write (pure Go) |
 | `github.com/microsoft/go-mssqldb` | Microsoft SQL Server read/write (pure Go) |
+| `gopkg.in/yaml.v3` | YAML read (yaml-src) |
+| `github.com/dop251/goja` | JavaScript eval for yaml `!!e` tags |
 
 ---
 
@@ -215,7 +219,7 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg/mysql tests.
 
 ## Next work
 
-1. **yaml, fn** — remaining stubs
+1. **fn** — remaining stub
 2. **Performance** — expand swlbench, profile large pipelines, reduce allocations in hot transforms
 3. **Polish** — per-handler help, golden vs swl2
 
