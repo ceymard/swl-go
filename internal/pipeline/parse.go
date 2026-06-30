@@ -43,13 +43,16 @@ func Parse(argv []string, verbose int) (Pipeline, error) {
 		if len(seg.tokens) == 0 {
 			return Pipeline{}, errs.New("empty pipeline segment")
 		}
-		wantSink := seg.afterColon
-		id, kind, err := resolveHandler(seg.tokens[0], wantSink)
+		name, explicitSource := handler.SplitSourcePrefix(seg.tokens[0])
+		wantSink := seg.afterColon && !explicitSource
+		id, kind, err := resolveHandler(name, wantSink)
 		if err != nil {
 			return Pipeline{}, err
 		}
 		// Classify stage kind: transforms (flatten) vs file/db sinks.
-		if seg.afterColon && handler.IsTransformOnly(id) {
+		if explicitSource {
+			kind = StageSource // +handler is always a source, even after ::
+		} else if seg.afterColon && handler.IsTransformOnly(id) {
 			kind = StageTransform
 		} else if seg.afterColon && i == len(raw)-1 {
 			kind = StageSink // last segment after :: is always the terminal sink
@@ -87,7 +90,8 @@ func stageTarget(tokens []string, id string, kind StageKind) (target string, tai
 		return "", tokens[1:]
 	}
 	wantSink := kind == StageSink
-	if _, _, ok := handler.ResolveAlias(tokens[0], wantSink); ok {
+	first, _ := handler.SplitSourcePrefix(tokens[0])
+	if _, _, ok := handler.ResolveAlias(first, wantSink); ok {
 		if len(tokens) > 1 {
 			return tokens[1], tokens[2:]
 		}
@@ -126,7 +130,7 @@ func splitSegments(argv []string) ([]segment, error) {
 			afterColon = true // following segments are sink-side until next ++
 		case "++":
 			flush()
-			afterColon = false // chained source
+			afterColon = false // legacy: chain another source (prefer :: +src)
 		default:
 			current = append(current, tok)
 		}

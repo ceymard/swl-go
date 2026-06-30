@@ -67,7 +67,7 @@ make build
 ./swl -h                       # Kong help
 ```
 
-Pipeline tokens: `++` chains sources, `::` separates source side from transforms/sink.
+Pipeline tokens: `::` separates sources from transforms/sink. Prefix a handler with `+` for an explicit source (`+pg` → pg-src); `:: +src` chains another source (same as legacy `++ src`). Dual aliases without `+` default to sink help; `+handler` always shows/resolves as source.
 
 **Terminal colors** (`internal/style`, palette from swl2 `debug.ts`):
 

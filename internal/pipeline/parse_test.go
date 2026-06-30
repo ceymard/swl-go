@@ -24,6 +24,44 @@ func TestParseTransformAfterColon(t *testing.T) {
 	}
 }
 
+func TestParseExplicitSourceAfterColon(t *testing.T) {
+	p, err := pipeline.Parse([]string{"data.json", "::", "+csv", "orders.csv", "::", "out.db"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Stages) != 3 {
+		t.Fatalf("stages %d", len(p.Stages))
+	}
+	if p.Stages[0].ID != "json-src" || p.Stages[0].Kind != stage.Source {
+		t.Fatalf("first %+v", p.Stages[0])
+	}
+	if p.Stages[1].ID != "csv-src" || p.Stages[1].Kind != stage.Source {
+		t.Fatalf("second %+v", p.Stages[1])
+	}
+	if p.Stages[2].ID != "sqlite-sink" || p.Stages[2].Kind != stage.Sink {
+		t.Fatalf("third %+v", p.Stages[2])
+	}
+}
+
+func TestParseExplicitSourceAfterColonSameAsPlusPlus(t *testing.T) {
+	legacy, err := pipeline.Parse([]string{"data.json", "++", "orders.csv", "::", "out.db"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modern, err := pipeline.Parse([]string{"data.json", "::", "+csv", "orders.csv", "::", "out.db"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legacy.Stages) != len(modern.Stages) {
+		t.Fatalf("legacy %d modern %d", len(legacy.Stages), len(modern.Stages))
+	}
+	for i := range legacy.Stages {
+		if legacy.Stages[i].ID != modern.Stages[i].ID || legacy.Stages[i].Kind != modern.Stages[i].Kind {
+			t.Fatalf("stage %d legacy %+v modern %+v", i, legacy.Stages[i], modern.Stages[i])
+		}
+	}
+}
+
 func TestParseExtension(t *testing.T) {
 	p, err := pipeline.Parse([]string{"data.json"}, 0)
 	if err != nil {

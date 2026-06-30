@@ -43,6 +43,19 @@ func TestHelpForArgvPgSinkDefault(t *testing.T) {
 	}
 }
 
+func TestHelpForArgvPgSourceAfterColon(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"data.json", "::", "+pg", "--help"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(text, "swl +pg") {
+		t.Fatalf("missing usage: %q", text)
+	}
+	if !strings.Contains(text, "--schema") {
+		t.Fatalf("expected pg-src flags, got:\n%s", text)
+	}
+}
+
 func TestHelpForArgvPipelineSinkSegment(t *testing.T) {
 	text, ok, err := handler.HelpForArgv([]string{"data.json", "::", "sqlite", "--help"}, "swl")
 	if err != nil || !ok {

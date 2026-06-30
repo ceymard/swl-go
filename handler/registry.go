@@ -120,6 +120,14 @@ var (
 	}
 )
 
+// SplitSourcePrefix strips a leading + that marks an explicit source handler (+pg → pg).
+func SplitSourcePrefix(token string) (name string, explicitSource bool) {
+	if strings.HasPrefix(token, "+") && len(token) > 1 {
+		return token[1:], true
+	}
+	return token, false
+}
+
 func ResolveAlias(name string, wantSink bool) (id string, kind stage.Kind, ok bool) {
 	e, ok := aliases[name]
 	if !ok {

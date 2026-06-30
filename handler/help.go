@@ -117,22 +117,11 @@ func resolveHelpHandler(tokens []string, afterColon bool) (string, error) {
 	if len(tokens) == 0 {
 		return "", errs.New("empty command")
 	}
-	first := tokens[0]
-	explicitSource := strings.HasPrefix(first, "+")
-	if explicitSource {
-		first = first[1:]
-	}
+	first, explicitSource := SplitSourcePrefix(tokens[0])
 
-	wantSink := afterColon
-	if !afterColon {
-		switch {
-		case explicitSource:
-			wantSink = false
-		case isDualAlias(first):
-			wantSink = true // default sink when both src/sink exist (swl2-style help)
-		default:
-			wantSink = false
-		}
+	wantSink := afterColon && !explicitSource
+	if !afterColon && !explicitSource && isDualAlias(first) {
+		wantSink = true // dual alias without + defaults to sink help (swl2-style)
 	}
 
 	id, _, ok := resolveHandlerName(first, wantSink)
