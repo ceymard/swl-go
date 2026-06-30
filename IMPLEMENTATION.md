@@ -112,7 +112,9 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `pg-sink` | `handler/pg` | ✅ | INSERT/upsert, `-t/-d/-u`, auto-create, transactions |
 | `xlsx-src` | `handler/xlsx` | ✅ | xlsx/xlsm via excelize, **xlsb via go-xlsb**, ods via knieriem/odf; sheets, `-r/-e/-i` |
 | `xlsx-sink` | `handler/xlsx` | ✅ | one sheet per collection, merges into existing workbook, `-u` (no-op) |
-| others | — | stub | mysql, duckdb, yaml, parquet, fn |
+| `parquet-src` | `handler/parquet` | ✅ | multi-file, `-c` columns; merges GCS archive shards (`orders-0000001.pqt` → `orders`) |
+| `parquet-sink` | `handler/parquet` | ✅ | file / dir / `%` paths (`.parquet`/`.pqt`); schema inferred from row values |
+| others | — | stub | mysql, duckdb, yaml, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -136,7 +138,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -160,6 +162,7 @@ testdata/csv/            CSV fixture files
 | `github.com/xuri/excelize/v2` | xlsx/xlsm read |
 | `github.com/TsubasaBE/go-xlsb` | xlsb read |
 | `github.com/knieriem/odf` | ODS read |
+| `github.com/parquet-go/parquet-go` | Parquet read/write (no DuckDB) |
 
 ---
 
@@ -178,18 +181,18 @@ Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
 | Location | Covers |
 |----------|--------|
 | `internal/stream`, `cli`, `pipeline`, `errs`, `handlers`, `runner` | Unit + runner integration |
-| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/flatten`, `handler/registry` | Handlers |
+| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/parquet`, `handler/flatten`, `handler/registry` | Handlers |
 | `handler/help_test.go`, `internal/pipeline/parse_test.go` | `--help`, `+handler`, `::` syntax |
 | `handler/pg` (integration) | testcontainers Postgres, FK schema order, sink round-trip |
 | `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg` | Committed fixtures |
-| `test/swltest` | End-to-end pipelines (flatten, xlsx→sqlite) |
+| `test/swltest` | End-to-end pipelines (flatten, xlsx→sqlite, json→parquet, parquet shards) |
 
 ---
 
 ## Next work
 
 1. **mysql** — database handlers
-2. **duckdb, yaml, parquet, fn** — remaining stubs
+2. **duckdb, yaml, fn** — remaining stubs
 3. **Polish** — per-handler help, golden vs swl2
 
 ---

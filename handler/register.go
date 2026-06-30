@@ -6,6 +6,7 @@ import (
 	"github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/json"
 	"github.com/ceymard/swl-go/handler/pg"
+	"github.com/ceymard/swl-go/handler/parquet"
 	"github.com/ceymard/swl-go/handler/sqlite"
 	"github.com/ceymard/swl-go/handler/unflatten"
 	"github.com/ceymard/swl-go/handler/xlsx"
@@ -68,6 +69,14 @@ func init() {
 	RegisterParser("xlsx-sink", xlsx.ParseSinkOptions)
 	RegisterOptParser("xlsx-sink", xlsx.SinkOptParser())
 
+	// Parquet source + sink (swl2 swl-parquet-src/sink.ts).
+	Register("parquet-src", parquet.Source{}, Meta{})
+	RegisterParser("parquet-src", parquet.ParseSrcOptions)
+	RegisterOptParser("parquet-src", parquet.SrcOptParser())
+	Register("parquet-sink", parquet.Sink{}, Meta{})
+	RegisterParser("parquet-sink", parquet.ParseSinkOptions)
+	RegisterOptParser("parquet-sink", parquet.SinkOptParser())
+
 	registerStubs()
 }
 
@@ -77,7 +86,7 @@ func registerStubs() {
 		"my-src",
 		"duckdb-src", "duckdb-sink",
 		"yaml-src", "yaml-sink",
-		"parquet-src", "parquet-sink", "fn",
+		"fn",
 	}
 	for _, id := range stubs {
 		Register(id, stubHandler{id: id}, Meta{Stub: true})

@@ -104,7 +104,7 @@ var (
 
 	extensions = map[string]aliasEntry{
 		".csv": {"csv-src", "csv-sink"},
-		".pqt": {"parquet-src", ""}, ".parquet": {"parquet-src", ""},
+		".pqt": {"parquet-src", "parquet-sink"}, ".parquet": {"parquet-src", "parquet-sink"},
 		".db": {"sqlite-src", "sqlite-sink"}, ".sqlite": {"sqlite-src", "sqlite-sink"},
 		".ddb": {"duckdb-src", "duckdb-sink"}, ".duckdb": {"duckdb-src", "duckdb-sink"},
 		".xlsx": {"xlsx-src", "xlsx-sink"}, ".ods": {"xlsx-src", "xlsx-sink"},
