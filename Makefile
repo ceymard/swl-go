@@ -1,7 +1,7 @@
 BINARY := swl
 CMD    := ./cmd/swl
 
-.PHONY: all build install test test-coverage test-pg clean
+.PHONY: all build install test test-coverage test-pg test-mysql clean
 
 CGO_ENABLED ?= 1
 export CGO_ENABLED
@@ -26,6 +26,9 @@ test-coverage:
 # Postgres integration tests (requires Docker).
 test-pg:
 	go test ./handler/pg/... -v -count=1
+
+test-mysql:
+	go test ./handler/mysql/... -v -count=1
 
 clean:
 	rm -f $(BINARY)

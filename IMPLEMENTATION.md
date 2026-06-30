@@ -2,7 +2,7 @@
 
 **Living document.** Update this file whenever the port changes (new handlers, API shifts, completed phases). For checkpoint notes and deep dive history see [`PORT.md`](PORT.md). For original goals see [`plan.md`](plan.md).
 
-*Last updated: 2026-06-30 — xlsx-sink.*
+*Last updated: 2026-06-30 — my-src/my-sink, performance priority.*
 
 ---
 
@@ -20,8 +20,21 @@
 | xlsx source + sink | ✅ Done (src: xlsx/xlsm excelize, xlsb go-xlsb, ods; sink: xlsx/xlsm excelize) |
 | SSH tunnels | ✅ Done |
 | sonic JSON I/O | ✅ Done (`internal/jsonx`, json5 fallback on read) |
+| Performance | 🎯 Priority — batched I/O, streaming, native drivers (see below) |
 
-**Module:** `github.com/ceymard/swl-go` · **Go:** 1.26.4 · **Binary:** `make build` → `./swl` (requires **CGO** for SQLite)
+**Module:** `github.com/ceymard/swl-go` · **Go:** 1.26.4 · **Binary:** `make build` → `./swl` (requires **CGO** for SQLite/DuckDB)
+
+### Performance priority
+
+Throughput and memory use are first-class concerns for swl-go:
+
+- **Streaming** — sources yield rows via `iter.Seq2`; avoid materializing whole collections unless a handler requires it (e.g. schema inference).
+- **Fast JSON** — sonic for marshal/unmarshal; json5 only on read fallback.
+- **Database sinks** — batch writes where the driver allows (PG COPY, MySQL multi-row INSERT, DuckDB JSON batch + `from_json`).
+- **Native drivers** — pgx, go-sql-driver/mysql, mattn/go-sqlite3, duckdb-go; no ORM layer.
+- **Benchmarks** — extend `test/swlbench` when optimizing hot paths; compare before/after on large fixtures (`testdata/json/bench50k.json`).
+
+When adding handlers or changing I/O paths, prefer streaming + batching over loading full datasets into memory.
 
 ---
 
@@ -116,7 +129,9 @@ Disabled when `NO_COLOR` is set or output is not a TTY (pipes, redirects).
 | `parquet-sink` | `handler/parquet` | ✅ | file / dir / `%` paths (`.parquet`/`.pqt`); schema inferred from row values |
 | `duckdb-src` | `handler/duckdb` | ✅ | auto tables via `information_schema`, `-q` query; rows via `to_json` |
 | `duckdb-sink` | `handler/duckdb` | ✅ | `-t/-d/-u`, JSON batch insert via `from_json`; `schema.table` collections |
-| others | — | stub | mysql, yaml, fn |
+| `my-src` | `handler/mysql` | ✅ | URI + SSH `@@`, auto tables, `-q`; JSON columns parsed to nested maps/slices |
+| `my-sink` | `handler/mysql` | ✅ | batched INSERT (512 rows), `-t/-d/-u/-a`; JSON DDL for nested values |
+| others | — | stub | yaml, fn |
 
 Registry: `handler/registry.go` (aliases mirror `swl2/scripts/swl.ts`).
 
@@ -140,7 +155,7 @@ internal/
   errs/, msg/, schema/, stage/
 handler/
   registry.go, register.go, stub.go, reg.go
-  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/
+  flatten/, coerce/, unflatten/, json/, sqlite/, csv/, pg/, xlsx/, parquet/, duckdb/, mysql/
 test/swltest/            Integration helpers (not in prod binary)
 testdata/json/           JSON fixture files
 testdata/csv/            CSV fixture files
@@ -166,6 +181,7 @@ testdata/csv/            CSV fixture files
 | `github.com/knieriem/odf` | ODS read |
 | `github.com/parquet-go/parquet-go` | Parquet read/write (no DuckDB) |
 | `github.com/duckdb/duckdb-go/v2` | DuckDB read/write (CGO) |
+| `github.com/go-sql-driver/mysql` | MySQL read/write (pure Go) |
 
 ---
 
@@ -177,25 +193,26 @@ testdata/csv/            CSV fixture files
 CGO_ENABLED=1 go test ./...   # or: make test
 make test-coverage   # per-package coverage summary
 make test-pg   # handler/pg integration (Docker + testcontainers)
+make test-mysql   # handler/mysql integration (Docker + testcontainers)
 ```
 
-Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg tests.
+Set `SKIP_TESTCONTAINERS=1` to skip Docker-backed pg/mysql tests.
 
 | Location | Covers |
 |----------|--------|
 | `internal/stream`, `cli`, `pipeline`, `errs`, `handlers`, `runner` | Unit + runner integration |
-| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/parquet`, `handler/duckdb`, `handler/flatten`, `handler/registry` | Handlers |
+| `handler/json`, `handler/sqlite`, `handler/csv`, `handler/pg`, `handler/xlsx`, `handler/parquet`, `handler/duckdb`, `handler/mysql`, `handler/flatten`, `handler/registry` | Handlers |
 | `handler/help_test.go`, `internal/pipeline/parse_test.go` | `--help`, `+handler`, `::` syntax |
-| `handler/pg` (integration) | testcontainers Postgres, FK schema order, sink round-trip |
-| `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg` | Committed fixtures (`pg/complex_types.sql`: `text[]`, nested `jsonb`) |
+| `handler/pg`, `handler/mysql` (integration) | testcontainers; complex JSON / array types |
+| `testdata/json`, `testdata/csv`, `testdata/xlsx`, `testdata/pg`, `testdata/mysql` | Committed fixtures |
 | `test/swltest` | End-to-end pipelines (flatten, xlsx→sqlite, json→parquet, parquet shards) |
 
 ---
 
 ## Next work
 
-1. **mysql** — database handlers
-2. **yaml, fn** — remaining stubs
+1. **yaml, fn** — remaining stubs
+2. **Performance** — expand swlbench, profile large pipelines, reduce allocations in hot transforms
 3. **Polish** — per-handler help, golden vs swl2
 
 ---

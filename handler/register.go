@@ -6,6 +6,7 @@ import (
 	"github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/duckdb"
 	"github.com/ceymard/swl-go/handler/json"
+	"github.com/ceymard/swl-go/handler/mysql"
 	"github.com/ceymard/swl-go/handler/pg"
 	"github.com/ceymard/swl-go/handler/parquet"
 	"github.com/ceymard/swl-go/handler/sqlite"
@@ -86,13 +87,20 @@ func init() {
 	RegisterParser("duckdb-sink", duckdb.ParseSinkOptions)
 	RegisterOptParser("duckdb-sink", duckdb.SinkOptParser())
 
+	// MySQL source + sink (swl2 swl-my-src.ts; sink is swl-go extension).
+	Register("my-src", mysql.Source{}, Meta{})
+	RegisterParser("my-src", mysql.ParseSrcOptions)
+	RegisterOptParser("my-src", mysql.SrcOptParser())
+	Register("my-sink", mysql.Sink{}, Meta{})
+	RegisterParser("my-sink", mysql.ParseSinkOptions)
+	RegisterOptParser("my-sink", mysql.SinkOptParser())
+
 	registerStubs()
 }
 
 // registerStubs wires placeholder handlers for not-yet-ported swl2 scripts.
 func registerStubs() {
 	stubs := []string{
-		"my-src",
 		"yaml-src", "yaml-sink",
 		"fn",
 	}

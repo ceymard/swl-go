@@ -89,7 +89,7 @@ type aliasEntry struct {
 var (
 	aliases = map[string]aliasEntry{
 		"pg": {"pg-src", "pg-sink"}, "postgres": {"pg-src", "pg-sink"},
-		"mysql": {"my-src", ""}, "my": {"my-src", ""},
+		"mysql": {"my-src", "my-sink"}, "my": {"my-src", "my-sink"},
 		"sqlite": {"sqlite-src", "sqlite-sink"},
 		"duckdb": {"duckdb-src", "duckdb-sink"},
 		"xl": {"xlsx-src", "xlsx-sink"}, "xls": {"xlsx-src", "xlsx-sink"},
@@ -116,7 +116,7 @@ var (
 
 	protocols = map[string]aliasEntry{
 		"postgres://": {"pg-src", "pg-sink"},
-		"mysql://":    {"my-src", ""},
+		"mysql://":    {"my-src", "my-sink"},
 	}
 )
 
@@ -156,7 +156,6 @@ func ResolveProtocol(proto string, wantSink bool) (id string, kind stage.Kind, o
 func pickEntry(e aliasEntry, wantSink bool) (string, stage.Kind, bool) {
 	if wantSink {
 		if e.sink == "" {
-			// mysql alias: sink side falls back to source handler id used as sink
 			if e.source != "" {
 				return e.source, stage.Sink, true
 			}
