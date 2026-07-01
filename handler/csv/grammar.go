@@ -34,27 +34,27 @@ type SinkOpts struct {
 }
 
 var srcParser = optparse.Optparser(
-	optparse.Param("-d", "--delimiter").As("delimiter").Default(","),
-	optparse.Flag("--gunzip").As("gunzip"),
-	optparse.Param("-q", "--quote").As("quote"),
-	optparse.Flag("-n", "--no-empty").As("noempty"),
-	optparse.Flag("-N", "--empty-null").As("emptyisnull"),
-	optparse.Flag("-u").As("numbers"),
-	optparse.Param("-e", "--escape").As("escape"),
-	optparse.Param("-E", "--encoding").As("encoding").Default("utf-8"),
-	optparse.Param("-h", "--headers").As("headers").Default(""),
-	optparse.Param("-c", "--collection").As("collection"),
-	optparse.Param("-m", "--merge").As("merge"),
-	optparse.Flag("-s", "--simplify-headers").As("simplify_headers"),
-	optparse.Arg("files").Required().Repeat(),
+	optparse.Param("-d", "--delimiter").As("delimiter").Default(",").Help("Field delimiter"),
+	optparse.Flag("--gunzip").As("gunzip").Help("Decompress .gz files"),
+	optparse.Param("-q", "--quote").As("quote").Help("Quote character (default \")"),
+	optparse.Flag("-n", "--no-empty").As("noempty").Help("Skip rows where all fields are empty"),
+	optparse.Flag("-N", "--empty-null").As("emptyisnull").Help("Treat empty fields as null"),
+	optparse.Flag("-u").As("numbers").Help("Parse numeric fields"),
+	optparse.Param("-e", "--escape").As("escape").Help("Escape character"),
+	optparse.Param("-E", "--encoding").As("encoding").Default("utf-8").Help("Character encoding"),
+	optparse.Param("-h", "--headers").As("headers").Default("").Help("Comma-separated header names"),
+	optparse.Param("-c", "--collection").As("collection").Help("Collection name (default: filename stem)"),
+	optparse.Param("-m", "--merge").As("merge").Help("Add null columns (comma-separated names)"),
+	optparse.Flag("-s", "--simplify-headers").As("simplify_headers").Help("Normalize header names"),
+	optparse.Arg("files").Required().Repeat().Help("One or more CSV file paths"),
 )
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("path").Required(),
-	optparse.Param("-d", "--delimiter").As("delimiter").Default(";"),
-	optparse.Param("-q", "--quote").As("quote").Default(`"`),
-	optparse.Param("--charset").As("charset").Default("utf-8"),
-	optparse.Flag("-n", "--no-headers").As("no_headers"),
+	optparse.Arg("path").Required().Help("Output file, directory, or % pattern"),
+	optparse.Param("-d", "--delimiter").As("delimiter").Default(";").Help("Field delimiter"),
+	optparse.Param("-q", "--quote").As("quote").Default(`"`).Help("Quote character"),
+	optparse.Param("--charset").As("charset").Default("utf-8").Help("Character encoding"),
+	optparse.Flag("-n", "--no-headers").As("no_headers").Help("Omit header row"),
 ).Include(optparse.DefaultOpts)
 
 // SrcOptParser returns the optparse parser for csv-src.

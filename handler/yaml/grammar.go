@@ -14,9 +14,9 @@ type SrcOpts struct {
 }
 
 var srcParser = optparse.Optparser(
-	optparse.Param("-e", "--encoding").As("encoding"),
-	optparse.Param("-c", "--collection").As("collection"),
-	optparse.Arg("file").Required(),
+	optparse.Param("-e", "--encoding").As("encoding").Help("Character encoding (utf-8 only)"),
+	optparse.Param("-c", "--collection").As("collection").Help("Collection name when the file root is an array"),
+	optparse.Arg("file").Required().Help("YAML file (supports !!e eval tags and generator functions)"),
 ).Include(optparse.DefaultOpts)
 
 // SrcOptParser returns the optparse parser for yaml-src.
@@ -46,7 +46,7 @@ type SinkOpts struct {
 }
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("path").Required(),
+	optparse.Arg("path").Required().Help("Output .yml file, directory, or % pattern"),
 ).Include(optparse.DefaultOpts)
 
 // ParseSinkOptions parses yaml-sink flags; target is the output path.

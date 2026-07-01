@@ -31,6 +31,9 @@ func TestHelpForArgvPgSourceExplicit(t *testing.T) {
 	if !strings.Contains(text, "-s") || !strings.Contains(text, "--schema") {
 		t.Fatalf("expected pg-src flags, got:\n%s", text)
 	}
+	if !strings.Contains(text, "[sources...]") || !strings.Contains(text, "-q") || !strings.Contains(text, "--query") {
+		t.Fatalf("expected nested sources/-q help, got:\n%s", text)
+	}
 }
 
 func TestHelpForArgvPgSinkDefault(t *testing.T) {
@@ -40,6 +43,9 @@ func TestHelpForArgvPgSinkDefault(t *testing.T) {
 	}
 	if !strings.Contains(text, "--auto-create") {
 		t.Fatalf("expected pg-sink flags, got:\n%s", text)
+	}
+	if !strings.Contains(text, "[collections...]") || !strings.Contains(text, "where collections: <options>") {
+		t.Fatalf("expected nested collections help, got:\n%s", text)
 	}
 }
 

@@ -11,7 +11,7 @@ all: build
 # Build swl in the repo root.
 build:
 	CGO_ENABLED=1 go build -ldflags="-s -w" -o $(BINARY) $(CMD)
-	upx $(BINARY)
+	#upx $(BINARY)
 
 # Install swl to $(go env GOPATH)/bin (or GOBIN if set).
 install:

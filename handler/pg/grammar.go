@@ -19,16 +19,13 @@ type SrcOpts struct {
 	cli.BaseOpts
 }
 
-var srcItemParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
-	optparse.Param("-q", "--query").As("query"),
-)
+var srcItemParser = optparse.DefaultColSQLOpts
 
 var srcParser = optparse.Optparser(
-	optparse.Param("-s", "--schema").As("schema").Default("public"),
-	optparse.Arg("uri").Required(),
+	optparse.Param("-s", "--schema").As("schema").Default("public").Help("Default schema when no sources are listed"),
+	optparse.Arg("uri").Required().Help("Postgres connection URI (postgres://user:pass@host/db)"),
 ).Include(optparse.DefaultOpts).AddHandler(
-	optparse.Oneof(srcItemParser).As("sources").Repeat(),
+	optparse.Oneof(srcItemParser).As("sources").Repeat().Help("Table or query to emit as a collection"),
 )
 
 // SrcOptParser returns the optparse parser for pg-src.
@@ -88,29 +85,29 @@ type colSinkOpts struct {
 }
 
 var colSinkOptsParser = optparse.Optparser(
-	optparse.Flag("-n", "--table-name").As("table_name"),
-	optparse.Flag("-a", "--auto-create").As("auto_create"),
-	optparse.Flag("-t", "--truncate").As("truncate"),
-	optparse.Flag("-d", "--drop").As("drop"),
-	optparse.Flag("-u", "--upsert").As("upsert"),
-	optparse.Flag("--do-nothing").As("do_nothing"),
-	optparse.Flag("-U", "--update").As("update"),
-	optparse.Flag("-i", "--drop-indexes").As("drop_indexes"),
+	optparse.Flag("-n", "--table-name").As("table_name").Help("Use a different table name than the collection"),
+	optparse.Flag("-a", "--auto-create").As("auto_create").Help("Create table if it does not exist"),
+	optparse.Flag("-t", "--truncate").As("truncate").Help("Truncate table before load"),
+	optparse.Flag("-d", "--drop").As("drop").Help("Drop table before load"),
+	optparse.Flag("-u", "--upsert").As("upsert").Help("Upsert rows on conflict"),
+	optparse.Flag("--do-nothing").As("do_nothing").Help("ON CONFLICT DO NOTHING"),
+	optparse.Flag("-U", "--update").As("update").Help("Update existing rows on conflict"),
+	optparse.Flag("-i", "--drop-indexes").As("drop_indexes").Help("Drop indexes during load and recreate after"),
 )
 
 var colSinkParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
+	optparse.Arg("name").Required().Help("Collection/table name"),
 ).Include(colSinkOptsParser)
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("uri").Required(),
-	optparse.Flag("--disable-triggers").As("disable_triggers"),
-	optparse.Flag("-n", "--notice").As("notice"),
-	optparse.Flag("-y", "--notify").As("notify"),
-	optparse.Param("-s", "--schema").As("schema").Default("public"),
-	optparse.Flag("--ignore-non-existing").As("ignore_nonexisting"),
+	optparse.Arg("uri").Required().Help("Postgres connection URI"),
+	optparse.Flag("--disable-triggers").As("disable_triggers").Help("Disable triggers before load"),
+	optparse.Flag("-n", "--notice").As("notice").Help("Show NOTICE messages"),
+	optparse.Flag("-y", "--notify").As("notify").Help("Show LISTEN/NOTIFY traffic"),
+	optparse.Param("-s", "--schema").As("schema").Default("public").Help("Default schema for collections"),
+	optparse.Flag("--ignore-non-existing").As("ignore_nonexisting").Help("Skip collections whose table does not exist"),
 ).Include(optparse.DefaultOpts).Include(colSinkOptsParser).AddHandler(
-	optparse.Oneof(colSinkParser).As("collections").Repeat(),
+	optparse.Oneof(colSinkParser).As("collections").Repeat().Help("Per-collection sink options"),
 )
 
 // ParseSinkOptions parses pg-sink flags; target is the postgres URI.

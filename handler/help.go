@@ -125,6 +125,10 @@ func resolveHelpHandler(tokens []string, afterColon bool) (string, error) {
 	}
 
 	id, _, ok := resolveHandlerName(first, wantSink)
+	if !ok && !wantSink {
+		// Transform-only aliases (coerce, unflatten, …) have no source handler.
+		id, _, ok = resolveHandlerName(first, true)
+	}
 	if !ok {
 		return "", errs.New("cannot resolve handler for help: " + tokens[0])
 	}

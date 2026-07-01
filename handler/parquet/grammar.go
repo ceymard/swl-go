@@ -24,16 +24,16 @@ type SinkOpts struct {
 }
 
 var fileSelectionParser = optparse.Optparser(
-	optparse.Arg("file").Required(),
+	optparse.Arg("file").Required().Help("Parquet file path (.parquet or .pqt)"),
 	optparse.Param("-c", "--columns").As("columns").Help("Comma-separated columns to read"),
 )
 
 var srcParser = optparse.Optparser(
-	optparse.Oneof(fileSelectionParser).As("selections").Repeat(),
+	optparse.Oneof(fileSelectionParser).As("selections").Repeat().Help("Parquet files to read (shard names like orders-0000001.pqt merge into orders)"),
 ).Include(optparse.DefaultOpts)
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("path").Required(),
+	optparse.Arg("path").Required().Help("Output file, directory, or % pattern"),
 ).Include(optparse.DefaultOpts)
 
 // SrcOptParser returns the optparse parser for parquet-src.

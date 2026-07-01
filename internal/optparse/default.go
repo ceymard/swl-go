@@ -9,6 +9,18 @@ var DefaultOpts = Optparser(
 
 // DefaultColSQLOpts is swl2 default_col_sql_src_opts (table name + optional query).
 var DefaultColSQLOpts = Optparser(
-	Arg("name").Required().Help("collection/table name"),
+	Arg("name").Required().Help("Collection/table name"),
 	Param("-q", "--query").As("query").Help("SQL query instead of SELECT *"),
 )
+
+// DefaultColSinkOpts is shared per-collection SQL sink flags (truncate/drop/upsert).
+var DefaultColSinkOpts = Optparser(
+	Flag("-t", "--truncate").As("truncate").Help("Truncate table before load"),
+	Flag("-d", "--drop").As("drop").Help("Drop table before load"),
+	Flag("-u", "--upsert").As("upsert").Help("Upsert rows on conflict"),
+)
+
+// DefaultColSinkOptsAuto adds auto-create DDL for MySQL/MSSQL-style sinks.
+var DefaultColSinkOptsAuto = Optparser(
+	Flag("-a", "--auto-create").As("auto_create").Help("Create table if it does not exist"),
+).Include(DefaultColSinkOpts)

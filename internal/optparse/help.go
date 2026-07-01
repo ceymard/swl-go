@@ -57,13 +57,18 @@ func (p *Parser) GetHelp(indent, cmd string) string {
 			line += "  " + h.help
 		}
 		log(line)
+	}
+
+	showBases := func(h *Handler) {
 		for _, sub := range h.Bases {
-			log(sub.GetHelp(indent+"  ", fmt.Sprintf("where %s:", h.Key)))
+			where := fmt.Sprintf("where %s: <options>", h.Key)
+			log(sub.GetHelp(indent+"  ", where))
 		}
 	}
 
 	for _, h := range others {
 		disp(h)
+		showBases(h)
 	}
 	names := make([]string, 0, len(groups))
 	for name := range groups {

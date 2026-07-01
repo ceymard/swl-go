@@ -29,7 +29,7 @@ var sheetFlags = optparse.Optparser(
 )
 
 var sheetParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
+	optparse.Arg("name").Required().Help("Sheet name to read"),
 ).Include(sheetFlags)
 
 // SinkOpts is parsed argv for xlsx-sink.
@@ -40,7 +40,7 @@ type SinkOpts struct {
 }
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("file").Required(),
+	optparse.Arg("file").Required().Help("Output spreadsheet path (.xlsx or .xlsm)"),
 	optparse.Flag("-u", "--uncompress").As("uncompress").Help("Disable XLSX compression (ignored; excelize always compresses)"),
 ).Include(optparse.DefaultOpts)
 
@@ -61,9 +61,9 @@ func ParseSinkOptions(target string, tail []string) (any, error) {
 }
 
 var srcParser = optparse.Optparser(
-	optparse.Arg("file").Required(),
+	optparse.Arg("file").Required().Help("Spreadsheet file (.xlsx, .xlsm, .xlsb, .ods)"),
 ).Include(sheetFlags).Include(optparse.DefaultOpts).AddHandler(
-	optparse.Oneof(sheetParser).As("collections").Repeat().Help("Select sheets by name"),
+	optparse.Oneof(sheetParser).As("collections").Repeat().Help("Select sheets by name (default: all sheets)"),
 )
 
 // SrcOptParser returns the optparse parser for xlsx-src (help text).

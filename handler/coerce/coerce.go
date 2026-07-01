@@ -26,7 +26,7 @@ type Options struct {
 }
 
 var coerceParser = optparse.Optparser(
-	optparse.Param("-o", "--only-columns").As("only"),
+	optparse.Param("-o", "--only-columns").As("only").Help("Comma-separated columns to coerce (default: all)"),
 )
 
 // OptParser returns the optparse parser for coerce.
@@ -96,11 +96,11 @@ type UncoerceOptions struct {
 }
 
 var uncoerceParser = optparse.Optparser(
-	optparse.Param("-o", "--only-columns").As("only"),
-	optparse.Param("-e", "--except").As("except"),
-	optparse.Flag("-b", "--boolean").As("boolean"),
-	optparse.Flag("-t", "--trim").As("trim"),
-	optparse.Flag("-n", "--empty-is-null").As("empty_is_null"),
+	optparse.Param("-o", "--only-columns").As("only").Help("Comma-separated columns to uncoerce"),
+	optparse.Param("-e", "--except").As("except").Help("Comma-separated columns to skip"),
+	optparse.Flag("-b", "--boolean").As("boolean").Help("Parse true/false strings as booleans"),
+	optparse.Flag("-t", "--trim").As("trim").Help("Trim whitespace from strings"),
+	optparse.Flag("-n", "--empty-is-null").As("empty_is_null").Help("Treat empty strings as null"),
 )
 
 // OptParser returns the optparse parser for uncoerce.

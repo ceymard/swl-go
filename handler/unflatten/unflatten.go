@@ -20,7 +20,7 @@ type Options struct {
 }
 
 var optsParser = optparse.Optparser(
-	optparse.Flag("-n", "--no-empty").As("noempty"),
+	optparse.Flag("-n", "--no-empty").As("noempty").Help("Drop empty nested objects after unflattening"),
 )
 
 // OptParser returns the optparse parser for unflatten.

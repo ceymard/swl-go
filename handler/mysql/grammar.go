@@ -18,15 +18,12 @@ type SrcOpts struct {
 	cli.BaseOpts
 }
 
-var srcItemParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
-	optparse.Param("-q", "--query").As("query"),
-)
+var srcItemParser = optparse.DefaultColSQLOpts
 
 var srcParser = optparse.Optparser(
-	optparse.Arg("uri").Required(),
+	optparse.Arg("uri").Required().Help("MySQL connection URI (mysql://user:pass@host/db)"),
 ).Include(optparse.DefaultOpts).AddHandler(
-	optparse.Oneof(srcItemParser).As("sources").Repeat(),
+	optparse.Oneof(srcItemParser).As("sources").Repeat().Help("Table or query to emit as a collection"),
 )
 
 // SrcOptParser returns the optparse parser for my-src.
@@ -65,21 +62,14 @@ type SinkOpts struct {
 	cli.BaseOpts
 }
 
-var colSinkOpts = optparse.Optparser(
-	optparse.Flag("-t", "--truncate").As("truncate"),
-	optparse.Flag("-d", "--drop").As("drop"),
-	optparse.Flag("-u", "--upsert").As("upsert"),
-	optparse.Flag("-a", "--auto-create").As("auto_create"),
-)
-
 var colSinkParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
-).Include(colSinkOpts)
+	optparse.Arg("name").Required().Help("Collection/table name"),
+).Include(optparse.DefaultColSinkOptsAuto)
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("uri").Required(),
-).Include(optparse.DefaultOpts).Include(colSinkOpts).AddHandler(
-	optparse.Oneof(colSinkParser).As("collections").Repeat(),
+	optparse.Arg("uri").Required().Help("MySQL connection URI"),
+).Include(optparse.DefaultOpts).Include(optparse.DefaultColSinkOptsAuto).AddHandler(
+	optparse.Oneof(colSinkParser).As("collections").Repeat().Help("Per-collection sink options"),
 )
 
 // ParseSinkOptions parses my-sink flags; target is the mysql URI.

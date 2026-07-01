@@ -19,9 +19,9 @@ type SrcOpts struct {
 }
 
 var srcParser = optparse.Optparser(
-	optparse.Arg("file").Required(),
+	optparse.Arg("file").Required().Help("DuckDB database file (.duckdb or .ddb)"),
 ).Include(optparse.DefaultOpts).AddHandler(
-	optparse.Oneof(optparse.DefaultColSQLOpts).As("collections").Repeat(),
+	optparse.Oneof(optparse.DefaultColSQLOpts).As("collections").Repeat().Help("Tables or queries to emit (default: all tables)"),
 )
 
 // SrcOptParser returns the optparse parser for duckdb-src.
@@ -59,20 +59,14 @@ type SinkOpts struct {
 	cli.BaseOpts
 }
 
-var colSinkOpts = optparse.Optparser(
-	optparse.Flag("-t", "--truncate").As("truncate"),
-	optparse.Flag("-d", "--drop").As("drop"),
-	optparse.Flag("-u", "--upsert").As("upsert"),
-)
-
 var colSinkParser = optparse.Optparser(
-	optparse.Arg("name").Required(),
-).Include(colSinkOpts)
+	optparse.Arg("name").Required().Help("Collection/table name"),
+).Include(optparse.DefaultColSinkOpts)
 
 var sinkParser = optparse.Optparser(
-	optparse.Arg("file").Required(),
-).Include(optparse.DefaultOpts).Include(colSinkOpts).AddHandler(
-	optparse.Oneof(colSinkParser).As("collections").Repeat(),
+	optparse.Arg("file").Required().Help("DuckDB database file to write"),
+).Include(optparse.DefaultOpts).Include(optparse.DefaultColSinkOpts).AddHandler(
+	optparse.Oneof(colSinkParser).As("collections").Repeat().Help("Per-collection sink options"),
 )
 
 // ParseSinkOptions parses duckdb-sink flags; target is the database file path.

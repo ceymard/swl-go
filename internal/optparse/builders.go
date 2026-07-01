@@ -166,9 +166,10 @@ func Oneof(parsers ...*Parser) *Handler {
 }
 
 // As sets the result key (swl2 .as()).
+// Oneof handlers keep positional keys only — swl2 does not add --key activators for oneof.
 func (h *Handler) As(key string) *Handler {
 	h.Key = key
-	if len(h.Activators) == 0 {
+	if len(h.Activators) == 0 && len(h.Bases) == 0 {
 		h.Activators = []string{"--" + key}
 	}
 	return h

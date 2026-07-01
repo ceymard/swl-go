@@ -14,9 +14,9 @@ type SrcOpts struct {
 }
 
 var srcParser = optparse.Optparser(
-	optparse.Param("-e", "--encoding").As("encoding"),
-	optparse.Param("-c", "--collection").As("collection"),
-	optparse.Arg("file").Required(),
+	optparse.Param("-e", "--encoding").As("encoding").Help("Character encoding (default utf-8)"),
+	optparse.Param("-c", "--collection").As("collection").Help("Collection name for array/object roots or inline JSON"),
+	optparse.Arg("file").Required().Help("JSON file path, or inline JSON starting with [ or {"),
 ).Include(optparse.DefaultOpts)
 
 // SrcOptParser returns the optparse parser for json-src.
@@ -47,8 +47,8 @@ type SinkOpts struct {
 }
 
 var sinkParser = optparse.Optparser(
-	optparse.Flag("-o", "--object").As("object"),
-	optparse.Arg("path").Required(),
+	optparse.Flag("-o", "--object").As("object").Help("Write one JSON object keyed by collection name"),
+	optparse.Arg("path").Required().Help("Output file, directory, % pattern, or empty for cwd"),
 ).Include(optparse.DefaultOpts)
 
 // ParseSinkOptions parses json-sink flags; target is the output path.
