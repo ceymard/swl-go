@@ -7,58 +7,43 @@ import (
 	"github.com/ceymard/swl-go/handler"
 )
 
-func TestHelpForArgvSQLiteSinkDefault(t *testing.T) {
-	text, ok, err := handler.HelpForArgv([]string{"sqlite", "--help"}, "swl")
-	if err != nil || !ok {
-		t.Fatalf("ok=%v err=%v", ok, err)
-	}
-	if !strings.Contains(text, "swl sqlite") {
-		t.Fatalf("missing usage line: %q", text)
-	}
-	if !strings.Contains(text, "-t") || !strings.Contains(text, "--truncate") {
-		t.Fatalf("expected sqlite-sink flags, got:\n%s", text)
-	}
-}
-
-func TestHelpForArgvPgSourceExplicit(t *testing.T) {
-	text, ok, err := handler.HelpForArgv([]string{"+pg", "--help"}, "swl")
-	if err != nil || !ok {
-		t.Fatalf("ok=%v err=%v", ok, err)
-	}
-	if !strings.Contains(text, "swl +pg") {
-		t.Fatalf("missing usage: %q", text)
-	}
-	if !strings.Contains(text, "-s") || !strings.Contains(text, "--schema") {
-		t.Fatalf("expected pg-src flags, got:\n%s", text)
-	}
-	if !strings.Contains(text, "[sources...]") || !strings.Contains(text, "-q") || !strings.Contains(text, "--query") {
-		t.Fatalf("expected nested sources/-q help, got:\n%s", text)
-	}
-}
-
-func TestHelpForArgvPgSinkDefault(t *testing.T) {
+func TestHelpForArgvPgShowsBothSrcAndSink(t *testing.T) {
 	text, ok, err := handler.HelpForArgv([]string{"pg", "--help"}, "swl")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "--auto-create") {
+	if !strings.Contains(text, "SOURCE\n") || !strings.Contains(text, "SINK\n") {
+		t.Fatalf("expected SOURCE and SINK sections, got:\n%s", text)
+	}
+	if !strings.Contains(text, "swl pg …  (chain sources with ++)") {
+		t.Fatalf("missing source usage with ++, got:\n%s", text)
+	}
+	if !strings.Contains(text, "swl … :: pg …") {
+		t.Fatalf("missing sink usage with ::, got:\n%s", text)
+	}
+	if !strings.Contains(text, "--schema") || !strings.Contains(text, "-q") || !strings.Contains(text, "--query") {
+		t.Fatalf("expected pg-src flags, got:\n%s", text)
+	}
+	if !strings.Contains(text, "--auto-create") || !strings.Contains(text, "where collections: <options>") {
 		t.Fatalf("expected pg-sink flags, got:\n%s", text)
 	}
-	if !strings.Contains(text, "[collections...]") || !strings.Contains(text, "where collections: <options>") {
-		t.Fatalf("expected nested collections help, got:\n%s", text)
+	// BASE SWL OPTIONS should appear once (in SOURCE section only).
+	if strings.Count(text, "BASE SWL OPTIONS") != 1 {
+		t.Fatalf("expected BASE SWL OPTIONS once, got %d in:\n%s", strings.Count(text, "BASE SWL OPTIONS"), text)
 	}
 }
 
-func TestHelpForArgvPgSourceAfterColon(t *testing.T) {
-	text, ok, err := handler.HelpForArgv([]string{"data.json", "::", "+pg", "--help"}, "swl")
+func TestHelpForArgvPgExplicitPlusSameAsBare(t *testing.T) {
+	bare, ok, err := handler.HelpForArgv([]string{"pg", "--help"}, "swl")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "swl +pg") {
-		t.Fatalf("missing usage: %q", text)
+	plus, ok, err := handler.HelpForArgv([]string{"+pg", "--help"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "--schema") {
-		t.Fatalf("expected pg-src flags, got:\n%s", text)
+	if bare != plus {
+		t.Fatalf("+pg and pg help differ:\n%s\n---\n%s", bare, plus)
 	}
 }
 
@@ -67,8 +52,24 @@ func TestHelpForArgvPipelineSinkSegment(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "-t") {
+	if strings.Contains(text, "SOURCE\n") {
+		t.Fatalf("expected sink-only help after ::, got:\n%s", text)
+	}
+	if !strings.Contains(text, "swl … :: sqlite …") || !strings.Contains(text, "-t") {
 		t.Fatalf("expected sqlite-sink help, got:\n%s", text)
+	}
+}
+
+func TestHelpForArgvPgSourceAfterColonExplicit(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"data.json", "::", "+pg", "--help"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if strings.Contains(text, "SOURCE\n") {
+		t.Fatalf("expected single source help for :: +pg, got:\n%s", text)
+	}
+	if !strings.Contains(text, "--schema") {
+		t.Fatalf("expected pg-src flags, got:\n%s", text)
 	}
 }
 
@@ -80,22 +81,22 @@ func TestHelpForArgvNoHandlerHelp(t *testing.T) {
 }
 
 func TestHelpForArgvShortFlag(t *testing.T) {
-	text, ok, err := handler.HelpForArgv([]string{"csv", "-h"}, "swl")
+	text, ok, err := handler.HelpForArgv([]string{"yaml", "-h"}, "swl")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "swl csv") {
-		t.Fatalf("missing usage: %q", text)
+	if !strings.Contains(text, "SOURCE\n") || !strings.Contains(text, "SINK\n") {
+		t.Fatalf("expected dual yaml help, got:\n%s", text)
 	}
 }
 
-func TestHelpForArgvXlsxSource(t *testing.T) {
-	text, ok, err := handler.HelpForArgv([]string{"+xlsx", "--help"}, "swl")
+func TestHelpForArgvTransform(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"coerce", "--help"}, "swl")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(text, "swl +xlsx") || !strings.Contains(text, "collections") {
-		t.Fatalf("expected xlsx-src help, got:\n%s", text)
+	if !strings.Contains(text, "only-columns") {
+		t.Fatalf("expected coerce help, got:\n%s", text)
 	}
 }
 
@@ -103,5 +104,18 @@ func TestHelpForArgvUnknownHandler(t *testing.T) {
 	_, ok, err := handler.HelpForArgv([]string{"nope", "--help"}, "swl")
 	if !ok || err == nil {
 		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+}
+
+func TestHelpForArgvExtensionDual(t *testing.T) {
+	text, ok, err := handler.HelpForArgv([]string{"out.db", "--help"}, "swl")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(text, "SOURCE\n") || !strings.Contains(text, "SINK\n") {
+		t.Fatalf("expected dual help for .db extension, got:\n%s", text)
+	}
+	if !strings.Contains(text, "*.db") {
+		t.Fatalf("expected *.db label for extension help, got:\n%s", text)
 	}
 }
