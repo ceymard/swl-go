@@ -107,16 +107,15 @@ func TestSourceDeclaredJSONColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := snaps[0].Rows[0]
-	tags, ok := row["tags"].([]any)
+	tags, ok := snaps[0].Cell(0, "tags").([]any)
 	if !ok {
-		t.Fatalf("tags type %T value %#v", row["tags"], row["tags"])
+		t.Fatalf("tags type %T value %#v", snaps[0].Cell(0, "tags"), snaps[0].Cell(0, "tags"))
 	}
 	if len(tags) != 2 || tags[0] != "alpha" || tags[1] != "beta" {
 		t.Fatalf("tags %#v", tags)
 	}
-	if note, ok := row["note"].(string); !ok || note != `["ignored"]` {
-		t.Fatalf("note %#v", row["note"])
+	if note, ok := snaps[0].Cell(0, "note").(string); !ok || note != `["ignored"]` {
+		t.Fatalf("note %#v", snaps[0].Cell(0, "note"))
 	}
 }
 

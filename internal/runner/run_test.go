@@ -9,7 +9,6 @@ import (
 	"github.com/ceymard/swl-go/handler"
 	"github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/json"
-	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
 	"github.com/ceymard/swl-go/internal/pipeline"
 	"github.com/ceymard/swl-go/internal/runner"
@@ -20,8 +19,8 @@ import (
 func TestRunChainedSources(t *testing.T) {
 	swltest.RegisterHandlers()
 
-	var got []coll.Row
-	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Rows: &got}, handler.Meta{})
+	var snaps []swltest.Snapshot
+	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Snaps: &snaps}, handler.Meta{})
 	handler.RegisterParser(swltest.CollectSinkID, func(_ string, _ []string) (any, error) {
 		return struct{}{}, nil
 	})
@@ -48,8 +47,12 @@ func TestRunChainedSources(t *testing.T) {
 	if err := runner.Run(cfg, handler.Reg, p); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) < 3 {
-		t.Fatalf("expected rows from json + csv, got %d: %+v", len(got), got)
+	total := 0
+	for _, s := range snaps {
+		total += len(s.Rows)
+	}
+	if total < 3 {
+		t.Fatalf("expected rows from json + csv, got %d: %+v", total, snaps)
 	}
 }
 

@@ -30,12 +30,18 @@ func tableRowTypeRef(collection, defaultSchema string) string {
 	return schema + "." + table
 }
 
-func columnNames(row coll.Row) []string {
-	names := make([]string, 0, len(row))
-	for k := range row {
-		names = append(names, k)
+// columnNames snapshots col's columns at Open time, in natural discovery
+// order (no sort — see plan's "Sink output order"). Columns appearing in
+// rows after this snapshot are silently dropped, matching prior behavior.
+func columnNames(col coll.Collection) []string {
+	if col.Columns == nil {
+		return nil
 	}
-	sort.Strings(names)
+	cs := col.Columns.Columns()
+	names := make([]string, len(cs))
+	for i, c := range cs {
+		names[i] = c.ColumnName
+	}
 	return names
 }
 
@@ -91,25 +97,39 @@ func formatHstore(m map[string]any) string {
 	return strings.Join(parts, ",")
 }
 
-func transformHstoreColumns(row coll.Row, hstoreCols []string) coll.Row {
+// transformHstoreColumns rewrites any hstoreCols cell holding a map value
+// into its hstore text representation. cols gives the name for each row
+// position (both are the same Open-time snapshot, so cols[i] is row[i]'s name).
+func transformHstoreColumns(row coll.Row, cols, hstoreCols []string) coll.Row {
 	if len(hstoreCols) == 0 {
 		return row
 	}
 	out := make(coll.Row, len(row))
-	for k, v := range row {
-		out[k] = v
-	}
+	copy(out, row)
 	for _, col := range hstoreCols {
-		v, ok := row[col]
-		if !ok || v == nil {
+		i := indexOfString(cols, col)
+		if i < 0 {
+			continue
+		}
+		v := row.Cell(i)
+		if v == nil {
 			continue
 		}
 		if _, isStr := v.(string); isStr {
 			continue
 		}
 		if m, ok := v.(map[string]any); ok {
-			out[col] = formatHstore(m)
+			out[i] = formatHstore(m)
 		}
 	}
 	return out
+}
+
+func indexOfString(ss []string, want string) int {
+	for i, s := range ss {
+		if s == want {
+			return i
+		}
+	}
+	return -1
 }

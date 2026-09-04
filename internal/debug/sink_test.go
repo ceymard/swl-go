@@ -11,12 +11,15 @@ import (
 
 func TestPrintRowPlain(t *testing.T) {
 	var buf bytes.Buffer
+	cs := coll.NewColumnSet()
+	cs.Index("name")
+	cs.Index("id")
+	cs.Index("ok")
 	s := stream.Of(coll.Collection{
-		Name: "users",
+		Name:    "users",
+		Columns: cs,
 		Rows: coll.SliceRowBatches([]coll.Row{{
-			"name": "alice",
-			"id":   float64(1),
-			"ok":   true,
+			"alice", float64(1), true,
 		}}),
 	})
 	if err := sinkTo(&buf, 0, s); err != nil {

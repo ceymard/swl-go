@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/dop251/goja"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -227,18 +226,17 @@ func exportValue(v goja.Value) (any, error) {
 	return v.Export(), nil
 }
 
-func (g *jsGenerator) run(acc map[string][]any, emit func(coll.Row) error) error {
+func (g *jsGenerator) run(acc map[string][]any, emit func(any) error) error {
 	accVal, err := gojaAccToValue(g.rt.vm, acc)
 	if err != nil {
 		return err
 	}
 	push := func(call goja.FunctionCall) goja.Value {
 		obj := call.Argument(0).Export()
-		row, ok := objectToRow(obj)
-		if !ok {
+		if _, ok := obj.(map[string]any); !ok {
 			return goja.Undefined()
 		}
-		_ = emit(row)
+		_ = emit(obj)
 		return goja.Undefined()
 	}
 	if _, err := g.fn(goja.Undefined(), accVal, g.rt.vm.ToValue(push)); err != nil {
@@ -263,33 +261,27 @@ func gojaAccToValue(vm *goja.Runtime, acc map[string][]any) (goja.Value, error) 
 	return jsAcc, nil
 }
 
-func objectToRow(v any) (coll.Row, bool) {
-	if m, ok := v.(map[string]any); ok {
-		return coll.Row(m), true
-	}
-	return nil, false
+// itemToMap reports whether v is an object-shaped YAML value (destined to
+// become a positional row via coll.RowFromMap), as opposed to a scalar
+// wrapped under a synthetic "value" column.
+func itemToMap(v any) (map[string]any, bool) {
+	m, ok := v.(map[string]any)
+	return m, ok
 }
 
-func stripMeta(row coll.Row) coll.Row {
-	if row == nil {
+func stripMeta(m map[string]any) map[string]any {
+	if m == nil {
 		return nil
 	}
-	if _, ok := row["__meta__"]; !ok {
-		return row
+	if _, ok := m["__meta__"]; !ok {
+		return m
 	}
-	out := make(coll.Row, len(row)-1)
-	for k, v := range row {
+	out := make(map[string]any, len(m)-1)
+	for k, v := range m {
 		if k == "__meta__" {
 			continue
 		}
 		out[k] = v
 	}
 	return out
-}
-
-func itemToRow(v any) (coll.Row, bool) {
-	if m, ok := v.(map[string]any); ok {
-		return coll.Row(m), true
-	}
-	return nil, false
 }

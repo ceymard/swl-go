@@ -25,30 +25,28 @@ func TestSourceFixtureXLSXAllSheets(t *testing.T) {
 		t.Fatalf("collections %d", len(snaps))
 	}
 	byName := indexSnapshots(snaps)
-	if byName["Sheet1"].Rows[0]["name"] != "alice" || byName["Sheet1"].Rows[1]["name"] != "bob" {
+	if byName["Sheet1"].Cell(0, "name") != "alice" || byName["Sheet1"].Cell(1, "name") != "bob" {
 		t.Fatalf("Sheet1 rows %+v", byName["Sheet1"].Rows)
 	}
-	if byName["Sheet2"].Rows[0]["x"] != int64(9) {
+	if byName["Sheet2"].Cell(0, "x") != int64(9) {
 		t.Fatalf("Sheet2 %+v", byName["Sheet2"].Rows[0])
 	}
 }
 
 func TestSourceFixtureXLSXDotColumnInclude(t *testing.T) {
 	snaps := collectSource(t, fixtureXLSX, xlsx.SrcOpts{File: fixtureXLSX, Include: true})
-	row := snaps[0].Rows[0]
-	if row[".secret"] != "hidden" {
-		t.Fatalf("expected .secret column, row %+v", row)
+	if snaps[0].Cell(0, ".secret") != "hidden" {
+		t.Fatalf("expected .secret column, row %+v", snaps[0].Rows[0])
 	}
-	if _, ok := row["_skip"]; ok {
-		t.Fatalf("_skip column should be omitted: %+v", row)
+	if snaps[0].HasColumn("_skip") {
+		t.Fatalf("_skip column should be omitted: %+v", snaps[0].Rows[0])
 	}
 }
 
 func TestSourceFixtureXLSXDotColumnExcluded(t *testing.T) {
 	snaps := collectSource(t, fixtureXLSX, xlsx.SrcOpts{File: fixtureXLSX})
-	row := snaps[0].Rows[0]
-	if _, ok := row[".secret"]; ok {
-		t.Fatalf(".secret should be excluded without -i: %+v", row)
+	if snaps[0].HasColumn(".secret") {
+		t.Fatalf(".secret should be excluded without -i: %+v", snaps[0].Rows[0])
 	}
 }
 
@@ -101,8 +99,8 @@ func TestSourceXLSXTildeNull(t *testing.T) {
 		t.Fatal(err)
 	}
 	snaps := collectSource(t, path, xlsx.SrcOpts{File: path})
-	if snaps[0].Rows[0]["name"] != nil {
-		t.Fatalf("expected null name, got %+v", snaps[0].Rows[0]["name"])
+	if snaps[0].Cell(0, "name") != nil {
+		t.Fatalf("expected null name, got %+v", snaps[0].Cell(0, "name"))
 	}
 }
 
@@ -145,7 +143,7 @@ func TestSourceXLSXIgnoreErrors(t *testing.T) {
 	setFormula(t, f, sn, "B2", "NA()")
 	saveExcelize(t, f, path)
 	snaps := collectSource(t, path, xlsx.SrcOpts{File: path, IgnoreErrors: true})
-	if snaps[0].Rows[0]["id"] != int64(1) {
+	if snaps[0].Cell(0, "id") != int64(1) {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -161,12 +159,11 @@ func TestSourceXLSXCachedFormulaPreservesValue(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 2 {
 		t.Fatalf("snaps %+v", snaps)
 	}
-	row := snaps[0].Rows[0]
-	if row["cached_lookup"] != "cached_lookup" {
-		t.Fatalf("cached_lookup: got %+v", row["cached_lookup"])
+	if snaps[0].Cell(0, "cached_lookup") != "cached_lookup" {
+		t.Fatalf("cached_lookup: got %+v", snaps[0].Cell(0, "cached_lookup"))
 	}
-	if row["cached_na"] != "cached_na" {
-		t.Fatalf("cached_na: got %+v", row["cached_na"])
+	if snaps[0].Cell(0, "cached_na") != "cached_na" {
+		t.Fatalf("cached_na: got %+v", snaps[0].Cell(0, "cached_na"))
 	}
 }
 
@@ -176,9 +173,8 @@ func TestSourceXLSXFormulaRecalcWithoutCache(t *testing.T) {
 		File:   fixtureCachedFormula,
 		Sheets: []xlsx.SheetSpec{{Name: "data"}},
 	})
-	row := snaps[0].Rows[1]
-	if row["cached_lookup"] != int64(2) {
-		t.Fatalf("expected recalculated 1+1, got %+v", row["cached_lookup"])
+	if snaps[0].Cell(1, "cached_lookup") != int64(2) {
+		t.Fatalf("expected recalculated 1+1, got %+v", snaps[0].Cell(1, "cached_lookup"))
 	}
 }
 
@@ -190,7 +186,7 @@ func TestSourceXLSXCachedFormulaReadsAllSheets(t *testing.T) {
 	if len(byName["plain"].Rows) != 1 {
 		t.Fatalf("plain rows %+v", byName["plain"].Rows)
 	}
-	if byName["plain"].Rows[0]["segment"] != "segment" {
+	if byName["plain"].Cell(0, "segment") != "segment" {
 		t.Fatalf("plain row %+v", byName["plain"].Rows[0])
 	}
 	if len(byName["data"].Rows) != 2 {
@@ -216,8 +212,8 @@ func TestSourceXLSXRealWorkbookIntegration(t *testing.T) {
 	if len(byName["api.users"].Rows) < 100 {
 		t.Fatalf("api.users rows %d", len(byName["api.users"].Rows))
 	}
-	if byName["api.users"].Rows[1]["email"] != "Michael.Briere@opella.com" {
-		t.Fatalf("cached formula email: %+v", byName["api.users"].Rows[1]["email"])
+	if byName["api.users"].Cell(1, "email") != "Michael.Briere@opella.com" {
+		t.Fatalf("cached formula email: %+v", byName["api.users"].Cell(1, "email"))
 	}
 	if len(byName["api.targets"].Rows) < 1000 {
 		t.Fatalf("api.targets rows %d", len(byName["api.targets"].Rows))
@@ -306,7 +302,7 @@ func TestSourceODSWithLibreOffice(t *testing.T) {
 	xlsxPath := writeTestXLSX(t)
 	odsPath := convertToODS(t, xlsxPath)
 	snaps := collectSource(t, odsPath, xlsx.SrcOpts{File: odsPath})
-	if snaps[0].Rows[0]["name"] != "alice" {
+	if snaps[0].Cell(0, "name") != "alice" {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -359,6 +355,9 @@ func runSourceErr(path string, opts xlsx.SrcOpts) ([]swltest.Snapshot, error) {
 				return nil, err
 			}
 			snap.Rows = append(snap.Rows, batch...)
+		}
+		if c.Columns != nil {
+			snap.Columns = c.Columns.Columns()
 		}
 		snaps = append(snaps, snap)
 	}

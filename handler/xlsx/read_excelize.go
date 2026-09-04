@@ -32,14 +32,14 @@ func (b *excelizeBook) sheetSpecs(opts SrcOpts) ([]SheetSpec, error) {
 	return resolveSheetSpecs(b.file.GetSheetList(), opts), nil
 }
 
-func (b *excelizeBook) readSheet(spec SheetSpec) ([]coll.Row, error) {
+func (b *excelizeBook) readSheet(spec SheetSpec) ([]coll.Row, *coll.ColumnSet, error) {
 	if _, err := b.file.GetSheetIndex(spec.Name); err != nil {
-		return nil, errs.New(`no such sheet "` + spec.Name + `"`)
+		return nil, nil, errs.New(`no such sheet "` + spec.Name + `"`)
 	}
 
 	table, err := b.sheetTable(spec.Name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return rowsFromTable(table, spec, columnName)
 }

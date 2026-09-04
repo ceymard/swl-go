@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -40,13 +39,18 @@ func inferColumnType(v any) string {
 	}
 }
 
-// columnNames returns sorted keys from a row (stable DDL/INSERT order).
-func columnNames(row coll.Row) []string {
-	names := make([]string, 0, len(row))
-	for k := range row {
-		names = append(names, k)
+// columnNames snapshots col's columns at Open time, in natural discovery
+// order (no sort — see plan's "Sink output order"). Columns appearing in
+// rows after this snapshot are silently dropped, matching prior behavior.
+func columnNames(col coll.Collection) []string {
+	if col.Columns == nil {
+		return nil
 	}
-	sort.Strings(names)
+	cs := col.Columns.Columns()
+	names := make([]string, len(cs))
+	for i, c := range cs {
+		names[i] = c.ColumnName
+	}
 	return names
 }
 

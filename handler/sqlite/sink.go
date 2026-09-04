@@ -58,7 +58,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 
 func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll.Row) (handlers.RowWriter, error) {
 	table := col.Name
-	cols := columnNames(firstRow)
+	cols := columnNames(col)
 
 	if h.opts.Drop {
 		if h.cfg.Messages != nil {
@@ -160,7 +160,7 @@ func (w *rowWriter) insert(row coll.Row) error {
 	}
 	args := w.args[:len(w.cols)]
 	for i, c := range w.cols {
-		v, err := bindValue(row[c])
+		v, err := bindValue(row.Cell(i))
 		if err != nil {
 			return errs.Wrap(err, "bind value", "column", c)
 		}
@@ -175,7 +175,7 @@ func (w *rowWriter) insert(row coll.Row) error {
 func buildCreateTable(table string, cols []string, sample coll.Row) string {
 	parts := make([]string, len(cols))
 	for i, c := range cols {
-		parts[i] = fmt.Sprintf(`"%s" %s`, c, inferColumnType(sample[c]))
+		parts[i] = fmt.Sprintf(`"%s" %s`, c, inferColumnType(sample.Cell(i)))
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" (%s)`, table, strings.Join(parts, ", "))
 }

@@ -1,6 +1,7 @@
 package yaml
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -92,12 +93,22 @@ type nopCloser struct{ io.Writer }
 func (nopCloser) Close() error { return nil }
 
 func writeCollection(w io.Writer, c coll.Collection) error {
+	// names tracks c.Columns' current names, refreshed only when the
+	// (append-only, growing) ColumnSet has gained columns since last row.
+	var names []string
 	for batch, err := range c.Rows {
 		if err != nil {
 			return err
 		}
 		for _, row := range batch {
-			b, err := jsonx.Marshal(row)
+			if c.Columns != nil && len(names) != c.Columns.Len() {
+				cs := c.Columns.Columns()
+				names = make([]string, len(cs))
+				for i, col := range cs {
+					names[i] = col.ColumnName
+				}
+			}
+			b, err := marshalRow(names, row)
 			if err != nil {
 				return errs.Wrap(err, "marshal yaml row", "collection", c.Name)
 			}
@@ -113,6 +124,35 @@ func writeCollection(w io.Writer, c coll.Collection) error {
 		}
 	}
 	return nil
+}
+
+// marshalRow encodes row as a JSON object directly from (names, cells) —
+// no intermediate map[string]any allocation. names[i] pairs with row[i].
+func marshalRow(names []string, row coll.Row) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	n := len(row)
+	if len(names) < n {
+		n = len(names)
+	}
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		key, err := jsonx.Marshal(names[i])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(key)
+		buf.WriteByte(':')
+		val, err := jsonx.Marshal(row.Cell(i))
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(val)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 var _ handlers.Sink = Sink{}

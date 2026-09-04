@@ -31,9 +31,12 @@ func (s MemSource) Source(ctx context.Context, cfg handlers.Config, raw any) (co
 	return stream.Of(s.Collections...), nil
 }
 
-// RowCollectSink appends all rows to Rows (test fake sink).
+// RowCollectSink appends one Snapshot per collection seen to Snaps (test
+// fake sink) — pairs each collection's rows with its discovery-order
+// columns so tests can assert by column name via Snapshot.Cell instead of
+// hardcoding indexes.
 type RowCollectSink struct {
-	Rows *[]coll.Row
+	Snaps *[]Snapshot
 }
 
 func (c RowCollectSink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, opts any) error {
@@ -41,12 +44,17 @@ func (c RowCollectSink) Sink(ctx context.Context, cfg handlers.Config, in coll.S
 		if err != nil {
 			return err
 		}
+		snap := Snapshot{Name: col.Name}
 		for batch, err := range col.Rows {
 			if err != nil {
 				return err
 			}
-			*c.Rows = append(*c.Rows, batch...)
+			snap.Rows = append(snap.Rows, batch...)
 		}
+		if col.Columns != nil {
+			snap.Columns = col.Columns.Columns()
+		}
+		*c.Snaps = append(*c.Snaps, snap)
 	}
 	return nil
 }

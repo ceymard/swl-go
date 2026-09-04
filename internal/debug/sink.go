@@ -30,13 +30,17 @@ func sinkTo(out io.Writer, verbose int, in coll.Stream) error {
 		}
 		current = c.Name
 		n = 0
+		var names []string
 		for batch, err := range c.Rows {
 			if err != nil {
 				return err
 			}
 			for _, row := range batch {
 				n++
-				if err := printRow(out, current, n, row, colorize); err != nil {
+				if c.Columns != nil && len(names) != c.Columns.Len() {
+					names = columnNames(c.Columns)
+				}
+				if err := printRow(out, current, n, names, row, colorize); err != nil {
 					return err
 				}
 			}
@@ -49,18 +53,31 @@ func sinkTo(out io.Writer, verbose int, in coll.Stream) error {
 // PrintRow prints one row (used by -p passthrough tee in runner).
 func PrintRow(verbose int, c coll.Collection, row coll.Row) error {
 	_ = verbose
-	return printRow(os.Stderr, c.Name, 0, row, style.Enabled(os.Stderr))
+	var names []string
+	if c.Columns != nil {
+		names = columnNames(c.Columns)
+	}
+	return printRow(os.Stderr, c.Name, 0, names, row, style.Enabled(os.Stderr))
+}
+
+func columnNames(cs *coll.ColumnSet) []string {
+	cols := cs.Columns()
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = c.ColumnName
+	}
+	return names
 }
 
 // printRow formats one row: "collection:N key: value, ..." with colors when enabled.
-func printRow(out io.Writer, collection string, num int, row coll.Row, colorize bool) error {
+func printRow(out io.Writer, collection string, num int, names []string, row coll.Row, colorize bool) error {
 	if num > 0 {
 		prefix := style.Collection(collection, colorize) + style.Sep(":", colorize) + style.LineNum(strconv.Itoa(num), colorize) + " "
 		if _, err := io.WriteString(out, prefix); err != nil {
 			return errs.Wrap(err, "debug write")
 		}
 	}
-	if err := printValue(out, row, colorize, true); err != nil {
+	if err := printPositionalRow(out, names, row, colorize); err != nil {
 		return err
 	}
 	_, err := fmt.Fprintln(out)

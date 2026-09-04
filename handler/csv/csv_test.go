@@ -33,8 +33,8 @@ func TestSourceSimple(t *testing.T) {
 	if len(snaps[0].Rows) != 2 {
 		t.Fatalf("rows %d", len(snaps[0].Rows))
 	}
-	if _, ok := snaps[0].Rows[0]["id"].(int64); !ok {
-		t.Fatalf("expected numeric id, got %T", snaps[0].Rows[0]["id"])
+	if _, ok := snaps[0].Cell(0, "id").(int64); !ok {
+		t.Fatalf("expected numeric id, got %T", snaps[0].Cell(0, "id"))
 	}
 }
 

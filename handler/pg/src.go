@@ -58,9 +58,11 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 		defer tun.Close()
 
 		for _, spec := range sources {
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: spec.Name,
-				Rows: queryRows(ctx, pool, querySQL(spec)),
+				Name:    spec.Name,
+				Columns: cs,
+				Rows:    queryRows(ctx, pool, cs, querySQL(spec)),
 			}
 			if !yield(c, nil) {
 				return
@@ -71,7 +73,7 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 
 func queryRows(ctx context.Context, pool interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
-}, query string) coll.RowBatches {
+}, cs *coll.ColumnSet, query string) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		rows, err := pool.Query(ctx, query)
 		if err != nil {
@@ -80,16 +82,23 @@ func queryRows(ctx context.Context, pool interface {
 		}
 		defer rows.Close()
 
+		// FieldDescriptions is ordered (unlike pgx.RowToMap, which builds a
+		// Go map and discards column order); assign indexes up front so
+		// every row in this query shares the same positional layout.
+		for _, fd := range rows.FieldDescriptions() {
+			cs.Index(fd.Name)
+		}
+
 		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		for rows.Next() {
-			raw, err := pgx.RowToMap(rows)
+			vals, err := rows.Values()
 			if err != nil {
 				yield(nil, errs.Wrap(err, "postgres scan row"))
 				return
 			}
-			row := make(coll.Row, len(raw))
-			for k, v := range raw {
-				row[k] = normalizePGCell(v)
+			row := make(coll.Row, len(vals))
+			for i, v := range vals {
+				row[i] = normalizePGCell(v)
 			}
 			batch = append(batch, row)
 			if len(batch) == coll.DefaultBatchSize {

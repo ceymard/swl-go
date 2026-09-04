@@ -51,9 +51,11 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 				yield(coll.Collection{}, err)
 				return
 			}
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: g.name,
-				Rows: readSelections(ctx, g.files),
+				Name:    g.name,
+				Columns: cs,
+				Rows:    readSelections(ctx, cs, g.files),
 			}
 			if !yield(c, nil) {
 				return
@@ -62,7 +64,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}, nil
 }
 
-func readSelections(ctx context.Context, files []FileSelection) coll.RowBatches {
+func readSelections(ctx context.Context, cs *coll.ColumnSet, files []FileSelection) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		stopped := false
 		guardedYield := func(batch []coll.Row, err error) bool {
@@ -79,7 +81,7 @@ func readSelections(ctx context.Context, files []FileSelection) coll.RowBatches 
 			if stopped {
 				return
 			}
-			if err := readFile(ctx, sel, guardedYield); err != nil {
+			if err := readFile(ctx, cs, sel, guardedYield); err != nil {
 				guardedYield(nil, err)
 				return
 			}
@@ -87,7 +89,7 @@ func readSelections(ctx context.Context, files []FileSelection) coll.RowBatches 
 	}
 }
 
-func readFile(ctx context.Context, sel FileSelection, yield func([]coll.Row, error) bool) error {
+func readFile(ctx context.Context, cs *coll.ColumnSet, sel FileSelection, yield func([]coll.Row, error) bool) error {
 	f, err := os.Open(sel.File)
 	if err != nil {
 		return errs.Wrap(err, "open parquet file", "path", sel.File)
@@ -105,6 +107,14 @@ func readFile(ctx context.Context, sel FileSelection, yield func([]coll.Row, err
 	}
 
 	cols := parseColumns(sel.Columns)
+	if len(cols) > 0 {
+		// Explicit -c projection: seed indexes in that exact order so
+		// output columns are deterministic regardless of the underlying
+		// map's (unordered) iteration order.
+		for _, c := range cols {
+			cs.Index(c)
+		}
+	}
 	reader := parquet.NewGenericReader[any](pf)
 	defer reader.Close()
 
@@ -117,7 +127,7 @@ func readFile(ctx context.Context, sel FileSelection, yield func([]coll.Row, err
 		if n > 0 {
 			batch := make([]coll.Row, n)
 			for i := 0; i < n; i++ {
-				batch[i] = projectRow(anyToRow(buf[i]), cols)
+				batch[i] = anyToRow(cs, projectMap(buf[i], cols))
 			}
 			if !yield(batch, nil) {
 				return nil

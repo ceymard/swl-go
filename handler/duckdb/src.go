@@ -78,9 +78,11 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tables [
 			if cfg.Messages != nil {
 				cfg.Log(3, jsonRowsSQL(sqlText))
 			}
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: spec.Name,
-				Rows: queryJSONRows(ctx, db, sqlText),
+				Name:    spec.Name,
+				Columns: cs,
+				Rows:    queryJSONRows(ctx, db, cs, sqlText),
 			}
 			if !yield(c, nil) {
 				return
@@ -93,7 +95,7 @@ func jsonRowsSQL(inner string) string {
 	return fmt.Sprintf("SELECT to_json(J) AS json FROM (%s) J", inner)
 }
 
-func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) coll.RowBatches {
+func queryJSONRows(ctx context.Context, db *sql.DB, cs *coll.ColumnSet, innerSQL string) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		rows, err := db.QueryContext(ctx, jsonRowsSQL(innerSQL))
 		if err != nil {
@@ -109,7 +111,7 @@ func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) coll.RowBat
 				yield(nil, errs.Wrap(err, "duckdb scan row"))
 				return
 			}
-			row, err := rowFromJSONCell(cell)
+			row, err := rowFromJSONCell(cs, cell)
 			if err != nil {
 				yield(nil, errs.Wrap(err, "duckdb parse row json"))
 				return

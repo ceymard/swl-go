@@ -69,7 +69,7 @@ func TestSourceCustomQuery(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	if snaps[0].Rows[0]["id"] == nil {
+	if snaps[0].Cell(0, "id") == nil {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -137,10 +137,12 @@ func TestJSONToDuckDB(t *testing.T) {
 func TestSinkSchemaTable(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.duckdb")
 	stream := func(yield func(coll.Collection, error) bool) {
+		cs := coll.NewColumnSet()
+		row := coll.RowFromMap(cs, map[string]any{"id": int64(1), "name": "alice"})
 		rows := func(yieldBatch func([]coll.Row, error) bool) {
-			yieldBatch([]coll.Row{{"id": int64(1), "name": "alice"}}, nil)
+			yieldBatch([]coll.Row{row}, nil)
 		}
-		yield(coll.Collection{Name: "analytics.users", Rows: rows}, nil)
+		yield(coll.Collection{Name: "analytics.users", Columns: cs, Rows: rows}, nil)
 	}
 
 	sinkOpts, _ := duckdb.ParseSinkOptions(outPath, nil)

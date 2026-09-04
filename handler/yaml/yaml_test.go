@@ -28,7 +28,7 @@ func TestSourceSimpleMapping(t *testing.T) {
 	if len(snaps) != 1 || snaps[0].Name != "users" || len(snaps[0].Rows) != 2 {
 		t.Fatalf("got %+v", snaps)
 	}
-	if snaps[0].Rows[0]["name"] != "alice" {
+	if snaps[0].Cell(0, "name") != "alice" {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -73,18 +73,19 @@ func TestSourceJSGenerators(t *testing.T) {
 	for _, s := range snaps {
 		byName[s.Name] = s
 	}
-	if len(byName["static"].Rows) != 1 || byName["static"].Rows[0]["id"] != int64(1) {
-		t.Fatalf("static %+v", byName["static"].Rows)
+	static := byName["static"]
+	if len(static.Rows) != 1 || static.Cell(0, "id") != int64(1) {
+		t.Fatalf("static %+v", static.Rows)
 	}
-	gen := byName["generated"].Rows
-	if len(gen) != 2 {
-		t.Fatalf("generated rows %d", len(gen))
+	gen := byName["generated"]
+	if len(gen.Rows) != 2 {
+		t.Fatalf("generated rows %d", len(gen.Rows))
 	}
-	if gen[0]["ref"] != "base" {
-		t.Fatalf("generated[0] %+v", gen[0])
+	if gen.Cell(0, "ref") != "base" {
+		t.Fatalf("generated[0] %+v", gen.Rows[0])
 	}
-	if _, ok := gen[1]["__meta__"]; ok {
-		t.Fatalf("expected __meta__ stripped: %+v", gen[1])
+	if gen.HasColumn("__meta__") {
+		t.Fatalf("expected __meta__ stripped: %+v", gen.Rows[1])
 	}
 }
 

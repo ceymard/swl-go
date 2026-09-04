@@ -2,35 +2,17 @@ package parquet
 
 import (
 	"os"
-	"sort"
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/parquet-go/parquet-go"
 )
 
-func buildSchema(rows []map[string]any) *parquet.Schema {
+func buildSchema(cols []string, rows []map[string]any) *parquet.Schema {
 	group := parquet.Group{}
-	cols := columnNamesFromRows(rows)
 	for _, col := range cols {
 		group[col] = inferColumnType(rows, col)
 	}
 	return parquet.NewSchema("rows", group)
-}
-
-func columnNamesFromRows(rows []map[string]any) []string {
-	seen := make(map[string]struct{}, len(rows))
-	var cols []string
-	for _, row := range rows {
-		for k := range row {
-			if _, ok := seen[k]; ok {
-				continue
-			}
-			seen[k] = struct{}{}
-			cols = append(cols, k)
-		}
-	}
-	sort.Strings(cols)
-	return cols
 }
 
 func inferColumnType(rows []map[string]any, col string) parquet.Node {
@@ -63,11 +45,11 @@ func inferNode(v any) parquet.Node {
 	}
 }
 
-func writeParquetFile(path string, rows []map[string]any) error {
+func writeParquetFile(path string, cols []string, rows []map[string]any) error {
 	if len(rows) == 0 {
 		rows = []map[string]any{}
 	}
-	schema := buildSchema(rows)
+	schema := buildSchema(cols, rows)
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -85,16 +67,9 @@ func writeParquetFile(path string, rows []map[string]any) error {
 	return writer.Close()
 }
 
-func anyToRow(v any) coll.Row {
+func anyToRow(cs *coll.ColumnSet, v any) coll.Row {
 	if m, ok := v.(map[string]any); ok {
-		return coll.Row(m)
+		return coll.RowFromMap(cs, m)
 	}
-	if m, ok := v.(map[string]interface{}); ok {
-		out := make(coll.Row, len(m))
-		for k, val := range m {
-			out[k] = val
-		}
-		return out
-	}
-	return coll.Row{}
+	return coll.RowFromMap(cs, nil)
 }

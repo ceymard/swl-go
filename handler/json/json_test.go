@@ -58,7 +58,7 @@ func TestSourceInlineObject(t *testing.T) {
 	if len(snaps[0].Rows) != 1 {
 		t.Fatalf("rows %d", len(snaps[0].Rows))
 	}
-	if snaps[0].Rows[0]["a"] == nil {
+	if snaps[0].Cell(0, "a") == nil {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }

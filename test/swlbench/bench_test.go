@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	csvh "github.com/ceymard/swl-go/handler/csv"
 	"github.com/ceymard/swl-go/handler/flatten"
 	jsonh "github.com/ceymard/swl-go/handler/json"
 	"github.com/ceymard/swl-go/handler/sqlite"
@@ -16,7 +17,10 @@ import (
 	"github.com/ceymard/swl-go/internal/stream"
 )
 
-var benchRows []coll.Row
+var (
+	benchRows []coll.Row
+	benchCols *coll.ColumnSet
+)
 
 func init() {
 	path := filepath.Join("..", "..", "testdata", "json", "bench50k.json")
@@ -24,11 +28,14 @@ func init() {
 	if err != nil {
 		return
 	}
-	var parsed map[string][]coll.Row
+	var parsed map[string][]map[string]any
 	if err := jsonx.Unmarshal(b, &parsed); err != nil {
 		return
 	}
-	benchRows = parsed["users"]
+	benchCols = coll.NewColumnSet()
+	for _, m := range parsed["users"] {
+		benchRows = append(benchRows, coll.RowFromMap(benchCols, m))
+	}
 }
 
 func BenchmarkJSONParse50k(b *testing.B) {
@@ -51,9 +58,14 @@ func BenchmarkJSONMarshalRow(b *testing.B) {
 		b.Skip("bench fixture missing")
 	}
 	row := benchRows[0]
+	cols := benchCols.Columns()
+	m := make(map[string]any, len(cols))
+	for i, c := range cols {
+		m[c.ColumnName] = row.Cell(i)
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := jsonx.Marshal(row); err != nil {
+		if _, err := jsonx.Marshal(m); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -63,16 +75,18 @@ func BenchmarkFlattenRow(b *testing.B) {
 	if len(benchRows) == 0 {
 		b.Skip("bench fixture missing")
 	}
-	row := coll.Row{
+	inCols := coll.NewColumnSet()
+	row := coll.RowFromMap(inCols, map[string]any{
 		"user": map[string]any{
 			"name": "Ann",
 			"tags": []any{"a", "b", "c"},
 			"meta": map[string]any{"score": 1.5, "active": true},
 		},
-	}
+	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = flatten.Flatten(row)
+		outCols := coll.NewColumnSet()
+		_ = flatten.Flatten(inCols, row, outCols)
 	}
 }
 
@@ -86,7 +100,7 @@ func BenchmarkSQLiteInsert50k(b *testing.B) {
 		path := filepath.Join(b.TempDir(), "bench.db")
 		b.StartTimer()
 
-		s := stream.Of(coll.Collection{Name: "users", Rows: coll.SliceRowBatches(benchRows)})
+		s := stream.Of(coll.Collection{Name: "users", Columns: benchCols, Rows: coll.SliceRowBatches(benchRows)})
 		opts, _ := sqlite.ParseSinkOptions(path, nil)
 		if err := (sqlite.Sink{}).Sink(context.Background(), handlers.Config{Verbose: 0}, s, opts); err != nil {
 			b.Fatal(err)
@@ -160,6 +174,41 @@ func BenchmarkPipelineJSONFlattenSQLite50k(b *testing.B) {
 		}
 		s = stream.CheckContext(ctx, s)
 
+		s = progress.Track(cfg.Messages, progress.Sink, s)
+		if err := (sqlite.Sink{}).Sink(ctx, cfg, s, sinkOpts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkPipelineCSVSQLite50k mirrors BenchmarkPipelineJSONFlattenSQLite50k
+// but for a fixed-schema tabular source/sink with no transform in between —
+// the "mostly tabular" workload the ColumnSet refactor's hypothesis is
+// actually about (JSON+flatten retains per-key ColumnSet.Index hashing by
+// design; this path shouldn't).
+func BenchmarkPipelineCSVSQLite50k(b *testing.B) {
+	path := filepath.Join("..", "..", "testdata", "csv", "bench50k.csv")
+	if _, err := os.Stat(path); err != nil {
+		b.Skip("csv bench fixture missing")
+	}
+	srcOpts, err := csvh.ParseSrcOptions(path, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		dbPath := filepath.Join(b.TempDir(), "bench.db")
+		sinkOpts, _ := sqlite.ParseSinkOptions(dbPath, nil)
+		b.StartTimer()
+
+		cfg := handlers.Config{Ctx: ctx, Verbose: 0}
+		s, err := csvh.Source{}.Source(ctx, cfg, srcOpts)
+		if err != nil {
+			b.Fatal(err)
+		}
+		s = progress.Track(cfg.Messages, progress.Source, stream.CheckContext(ctx, s))
 		s = progress.Track(cfg.Messages, progress.Sink, s)
 		if err := (sqlite.Sink{}).Sink(ctx, cfg, s, sinkOpts); err != nil {
 			b.Fatal(err)

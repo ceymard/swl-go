@@ -19,20 +19,61 @@ type Transform struct{}
 type Options struct{} // no flags
 
 func (Transform) Transform(ctx context.Context, cfg handlers.Config, in coll.Stream, _ any) (coll.Stream, error) {
-	return stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		return Flatten(row), nil
+	return stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		// flatten invents new dotted-path keys per row — sharing the input
+		// ColumnSet would leave dead all-nil columns for the original
+		// nested keys, so it always allocates a fresh output ColumnSet.
+		inCols := c.Columns
+		outCols := coll.NewColumnSet()
+		cols := ColumnCache(inCols)
+		return outCols, func(row coll.Row) (coll.Row, error) {
+			return flattenRow(cols(), row, outCols), nil
+		}
 	}), nil
 }
 
-// Flatten recursively flattens nested map[string]any and []any values into one Row.
-func Flatten(row coll.Row) coll.Row {
-	flat := make(coll.Row)
-	flattenMap("", row, flat)
-	return flat
+// ColumnCache returns a function yielding cs.Columns(), re-snapshotting only
+// when cs has grown since the last call — avoids an O(K) allocation on every
+// row for a schema that (in practice) stabilizes after the first few rows.
+func ColumnCache(cs *coll.ColumnSet) func() []coll.Column {
+	var cached []coll.Column
+	lastLen := -1
+	return func() []coll.Column {
+		if cs == nil {
+			return nil
+		}
+		if cs.Len() != lastLen {
+			cached = cs.Columns()
+			lastLen = cs.Len()
+		}
+		return cached
+	}
 }
 
-// flattenMap walks v, building dotted/bracketed keys under prefix.
-func flattenMap(prefix string, v any, out coll.Row) {
+// Flatten recursively flattens row's cells (named via inCols) into a fresh
+// row built against outCols, e.g. inCols' "user" cell holding {b:1}
+// produces outCols' "user.b" = 1.
+func Flatten(inCols *coll.ColumnSet, row coll.Row, outCols *coll.ColumnSet) coll.Row {
+	if inCols == nil {
+		return nil
+	}
+	return flattenRow(inCols.Columns(), row, outCols)
+}
+
+// flattenRow is Flatten's per-row core, taking a pre-fetched column
+// snapshot so callers iterating many rows against a stable schema can cache
+// it (see ColumnCache) instead of paying an O(K) snapshot allocation per row.
+func flattenRow(cols []coll.Column, row coll.Row, outCols *coll.ColumnSet) coll.Row {
+	out := make(coll.Row, outCols.Len())
+	for i, col := range cols {
+		out = flattenAssign(outCols, out, col.ColumnName, row.Cell(i))
+	}
+	return out
+}
+
+// flattenAssign walks v, building dotted/bracketed keys under prefix and
+// assigning scalars into out (grown/indexed against outCols).
+func flattenAssign(outCols *coll.ColumnSet, out coll.Row, prefix string, v any) coll.Row {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, val := range x {
@@ -40,7 +81,7 @@ func flattenMap(prefix string, v any, out coll.Row) {
 			if prefix != "" {
 				key = prefix + "." + k
 			}
-			flattenMap(key, val, out)
+			out = flattenAssign(outCols, out, key, val)
 		}
 	case []any:
 		for i, val := range x {
@@ -48,20 +89,41 @@ func flattenMap(prefix string, v any, out coll.Row) {
 			if prefix == "" {
 				key = fmt.Sprintf("[%d]", i)
 			}
-			flattenMap(key, val, out)
+			out = flattenAssign(outCols, out, key, val)
 		}
 	default:
 		if prefix != "" {
-			out[prefix] = v
+			idx := outCols.Index(prefix)
+			if idx >= len(out) {
+				grown := make(coll.Row, idx+1)
+				copy(grown, out)
+				out = grown
+			}
+			out[idx] = v
 		}
 	}
+	return out
 }
 
-// Unflatten rebuilds nested structure from dot/bracket keys (inverse of Flatten).
-func Unflatten(row coll.Row, dropEmpty bool) coll.Row {
+// Unflatten rebuilds nested structure from row's dot/bracket-named cells
+// (named via inCols, the inverse of Flatten), producing a fresh row against
+// outCols — always a new ColumnSet, since unflatten collapses many input
+// columns into few (often one) output columns.
+func Unflatten(inCols *coll.ColumnSet, row coll.Row, dropEmpty bool, outCols *coll.ColumnSet) coll.Row {
+	var cols []coll.Column
+	if inCols != nil {
+		cols = inCols.Columns()
+	}
+	return UnflattenRow(cols, row, dropEmpty, outCols)
+}
+
+// unflattenRow is Unflatten's per-row core, taking a pre-fetched column
+// snapshot so callers iterating many rows against a stable schema can cache
+// it (see ColumnCache) instead of paying an O(K) snapshot allocation per row.
+func UnflattenRow(cols []coll.Column, row coll.Row, dropEmpty bool, outCols *coll.ColumnSet) coll.Row {
 	root := make(map[string]any)
-	for k, v := range row {
-		setPath(root, k, v)
+	for i, col := range cols {
+		setPath(root, col.ColumnName, row.Cell(i))
 	}
 	if dropEmpty {
 		pruneEmpty(root)
@@ -70,15 +132,11 @@ func Unflatten(row coll.Row, dropEmpty bool) coll.Row {
 	if len(root) == 1 {
 		for _, val := range root {
 			if m, ok := val.(map[string]any); ok {
-				return m
+				return coll.RowFromMap(outCols, m)
 			}
 		}
 	}
-	out := make(coll.Row)
-	for k, v := range root {
-		out[k] = v
-	}
-	return out
+	return coll.RowFromMap(outCols, root)
 }
 
 // setPath walks path parts and assigns value at the leaf.

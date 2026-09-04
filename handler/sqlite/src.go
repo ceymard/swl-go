@@ -70,9 +70,11 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tables [
 			if sqlText == "" {
 				sqlText = fmt.Sprintf(`SELECT * FROM "%s"`, strings.ReplaceAll(spec.Name, `"`, `""`))
 			}
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: spec.Name,
-				Rows: queryRows(ctx, db, sqlText, spec.Name),
+				Name:    spec.Name,
+				Columns: cs,
+				Rows:    queryRows(ctx, db, cs, sqlText, spec.Name),
 			}
 			if !yield(c, nil) {
 				return
@@ -81,7 +83,7 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tables [
 	}
 }
 
-func queryRows(ctx context.Context, db *sql.DB, query, tableName string) coll.RowBatches {
+func queryRows(ctx context.Context, db *sql.DB, cs *coll.ColumnSet, query, tableName string) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
@@ -94,6 +96,9 @@ func queryRows(ctx context.Context, db *sql.DB, query, tableName string) coll.Ro
 		if err != nil {
 			yield(nil, errs.Wrap(err, "sqlite columns"))
 			return
+		}
+		for _, name := range cols {
+			cs.Index(name)
 		}
 
 		colTypes, err := rows.ColumnTypes()
@@ -122,7 +127,7 @@ func queryRows(ctx context.Context, db *sql.DB, query, tableName string) coll.Ro
 			}
 			row := make(coll.Row, len(cols))
 			for i, name := range cols {
-				row[name] = normalizeScanCell(raw[i], jsonCols[name])
+				row[i] = normalizeScanCell(raw[i], jsonCols[name])
 			}
 			batch = append(batch, row)
 			if len(batch) == coll.DefaultBatchSize {

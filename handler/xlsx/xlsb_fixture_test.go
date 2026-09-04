@@ -212,10 +212,10 @@ func TestSourceFixtureXLSB(t *testing.T) {
 		t.Fatalf("collections %d", len(snaps))
 	}
 	byName := indexSnapshots(snaps)
-	if byName["Sheet1"].Rows[0]["name"] != "alice" || byName["Sheet1"].Rows[1]["name"] != "bob" {
+	if byName["Sheet1"].Cell(0, "name") != "alice" || byName["Sheet1"].Cell(1, "name") != "bob" {
 		t.Fatalf("Sheet1 rows %+v", byName["Sheet1"].Rows)
 	}
-	if byName["Sheet2"].Rows[0]["x"] != int64(9) {
+	if byName["Sheet2"].Cell(0, "x") != int64(9) {
 		t.Fatalf("Sheet2 %+v", byName["Sheet2"].Rows[0])
 	}
 }

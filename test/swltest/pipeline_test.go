@@ -20,14 +20,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestFlattenPipeline(t *testing.T) {
-	src := swltest.MemSource{Collections: []coll.Collection{{
-		Name: "users",
-		Rows: coll.SliceRowBatches([]coll.Row{{"user": map[string]any{"name": "Ann"}}}),
-	}}}
+	src := swltest.MemSource{Collections: []coll.Collection{
+		swltest.Coll("users", []string{"user"}, []any{map[string]any{"name": "Ann"}}),
+	}}
 	handler.Register(swltest.MemSrcID, src, handler.Meta{})
 
-	var got []coll.Row
-	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Rows: &got}, handler.Meta{})
+	var snaps []swltest.Snapshot
+	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Snaps: &snaps}, handler.Meta{})
 	handler.RegisterParser(swltest.CollectSinkID, func(_ string, _ []string) (any, error) {
 		return struct{}{}, nil
 	})
@@ -43,7 +42,7 @@ func TestFlattenPipeline(t *testing.T) {
 	if err := runner.Run(cfg, handler.Reg, p); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0]["user.name"] != "Ann" {
-		t.Fatalf("got %+v", got)
+	if len(snaps) != 1 || len(snaps[0].Rows) != 1 || snaps[0].Cell(0, "user.name") != "Ann" {
+		t.Fatalf("got %+v", snaps)
 	}
 }

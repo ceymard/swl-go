@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ceymard/swl-go/internal/coll"
@@ -61,7 +60,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	w := csv.NewWriter(f)
 	w.Comma = h.opts.Delimiter
 
-	cols := columnNames(firstRow)
+	cols := columnNames(col)
 	if !h.opts.NoHeaders {
 		if err := w.Write(cols); err != nil {
 			_ = f.Close()
@@ -98,8 +97,8 @@ func (rw *rowWriter) Close() error {
 
 func (rw *rowWriter) writeRow(row coll.Row) error {
 	record := make([]string, len(rw.cols))
-	for i, c := range rw.cols {
-		record[i] = cellString(row[c])
+	for i := range rw.cols {
+		record[i] = cellString(row.Cell(i))
 	}
 	if err := rw.w.Write(record); err != nil {
 		return errs.Wrap(err, "write csv row", "path", rw.path)
@@ -107,12 +106,18 @@ func (rw *rowWriter) writeRow(row coll.Row) error {
 	return nil
 }
 
-func columnNames(row coll.Row) []string {
-	cols := make([]string, 0, len(row))
-	for k := range row {
-		cols = append(cols, k)
+// columnNames snapshots col's columns at Open time, in natural discovery
+// order (no sort — see plan's "Sink output order"). Columns appearing in
+// rows after this snapshot are silently dropped, matching prior behavior.
+func columnNames(col coll.Collection) []string {
+	if col.Columns == nil {
+		return nil
 	}
-	sort.Strings(cols)
+	cs := col.Columns.Columns()
+	cols := make([]string, len(cs))
+	for i, c := range cs {
+		cols[i] = c.ColumnName
+	}
 	return cols
 }
 

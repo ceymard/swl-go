@@ -3,8 +3,6 @@ package parquet
 import (
 	"regexp"
 	"strings"
-
-	"github.com/ceymard/swl-go/internal/coll"
 )
 
 // swl2 swl-parquet-src.ts: basename(file).replace(/(-\d*)?\.[^\.]*$/, "")
@@ -33,13 +31,20 @@ func parseColumns(spec string) []string {
 	return out
 }
 
-func projectRow(row coll.Row, cols []string) coll.Row {
+// projectMap selects cols (in the given order) out of v, which is the
+// parquet reader's raw decoded row (expected to be map[string]any). An
+// empty cols means "no projection" — v passes through unchanged.
+func projectMap(v any, cols []string) any {
 	if len(cols) == 0 {
-		return row
+		return v
 	}
-	out := make(coll.Row, len(cols))
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	out := make(map[string]any, len(cols))
 	for _, c := range cols {
-		out[c] = row[c]
+		out[c] = m[c]
 	}
 	return out
 }

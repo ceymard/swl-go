@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -10,12 +9,18 @@ import (
 	"github.com/ceymard/swl-go/internal/jsonx"
 )
 
-func columnNames(row coll.Row) []string {
-	names := make([]string, 0, len(row))
-	for k := range row {
-		names = append(names, k)
+// columnNames snapshots col's columns at Open time, in natural discovery
+// order (no sort — see plan's "Sink output order"). Columns appearing in
+// rows after this snapshot are silently dropped, matching prior behavior.
+func columnNames(col coll.Collection) []string {
+	if col.Columns == nil {
+		return nil
 	}
-	sort.Strings(names)
+	cs := col.Columns.Columns()
+	names := make([]string, len(cs))
+	for i, c := range cs {
+		names[i] = c.ColumnName
+	}
 	return names
 }
 
@@ -56,7 +61,7 @@ func normalizeCell(v any) any {
 	case []byte:
 		return maybeParseJSON(string(x))
 	case map[string]any:
-		out := make(coll.Row, len(x))
+		out := make(map[string]any, len(x))
 		for k, val := range x {
 			out[k] = normalizeCell(val)
 		}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -48,7 +47,13 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 		if err != nil {
 			return err
 		}
-		if err := replaceSheet(f, c.Name, rows); err != nil {
+		var cols []string
+		if c.Columns != nil {
+			for _, col := range c.Columns.Columns() {
+				cols = append(cols, col.ColumnName)
+			}
+		}
+		if err := replaceSheet(f, c.Name, cols, rows); err != nil {
 			return errs.Wrap(err, "write sheet", "sheet", c.Name)
 		}
 	}
@@ -102,14 +107,14 @@ func openSinkWorkbook(path string) (*excelize.File, bool, error) {
 	return f, true, nil
 }
 
-func replaceSheet(f *excelize.File, name string, rows []coll.Row) error {
+func replaceSheet(f *excelize.File, name string, cols []string, rows []coll.Row) error {
 	if err := deleteSheetIfPresent(f, name); err != nil {
 		return err
 	}
 	if _, err := f.NewSheet(name); err != nil {
 		return err
 	}
-	return writeSheetRows(f, name, rows)
+	return writeSheetRows(f, name, cols, rows)
 }
 
 func deleteSheetIfPresent(f *excelize.File, name string) error {
@@ -135,8 +140,7 @@ func sheetExists(f *excelize.File, name string) bool {
 	return err == nil && idx >= 0
 }
 
-func writeSheetRows(f *excelize.File, name string, rows []coll.Row) error {
-	cols := sinkColumnNames(rows)
+func writeSheetRows(f *excelize.File, name string, cols []string, rows []coll.Row) error {
 	for j, col := range cols {
 		coord, err := excelize.CoordinatesToCellName(j+1, 1)
 		if err != nil {
@@ -147,12 +151,12 @@ func writeSheetRows(f *excelize.File, name string, rows []coll.Row) error {
 		}
 	}
 	for i, row := range rows {
-		for j, col := range cols {
+		for j := range cols {
 			coord, err := excelize.CoordinatesToCellName(j+1, i+2)
 			if err != nil {
 				return err
 			}
-			if err := f.SetCellValue(name, coord, row[col]); err != nil {
+			if err := f.SetCellValue(name, coord, row.Cell(j)); err != nil {
 				return err
 			}
 		}
@@ -160,26 +164,10 @@ func writeSheetRows(f *excelize.File, name string, rows []coll.Row) error {
 	return nil
 }
 
-func sinkColumnNames(rows []coll.Row) []string {
-	seen := make(map[string]struct{}, 16)
-	cols := make([]string, 0, 16)
-	for _, row := range rows {
-		for k := range row {
-			if _, ok := seen[k]; ok {
-				continue
-			}
-			seen[k] = struct{}{}
-			cols = append(cols, k)
-		}
-	}
-	sort.Strings(cols)
-	return cols
-}
-
 func normalizeSinkRow(row coll.Row) coll.Row {
 	out := make(coll.Row, len(row))
-	for k, v := range row {
-		out[k] = sinkCellValue(v)
+	for i, v := range row {
+		out[i] = sinkCellValue(v)
 	}
 	return out
 }

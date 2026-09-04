@@ -15,7 +15,7 @@ func TestTrackFinalRowCount(t *testing.T) {
 
 	in := func(yield func(coll.Collection, error) bool) {
 		rows := func(yieldBatch func([]coll.Row, error) bool) {
-			batch := []coll.Row{{"id": 0}, {"id": 1}, {"id": 2}}
+			batch := []coll.Row{{0}, {1}, {2}}
 			yieldBatch(batch, nil)
 		}
 		yield(coll.Collection{Name: "users", Rows: rows}, nil)

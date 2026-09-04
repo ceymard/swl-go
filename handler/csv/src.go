@@ -48,9 +48,11 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 
 	return func(yield func(coll.Collection, error) bool) {
 		for _, g := range groups {
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: g.name,
-				Rows: readFiles(ctx, opts, g.files),
+				Name:    g.name,
+				Columns: cs,
+				Rows:    readFiles(ctx, opts, cs, g.files),
 			}
 			if !yield(c, nil) {
 				return
@@ -59,7 +61,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}, nil
 }
 
-func readFiles(ctx context.Context, opts SrcOpts, files []string) coll.RowBatches {
+func readFiles(ctx context.Context, opts SrcOpts, cs *coll.ColumnSet, files []string) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		stopped := false
@@ -92,7 +94,7 @@ func readFiles(ctx context.Context, opts SrcOpts, files []string) coll.RowBatche
 				yield(nil, err)
 				return
 			}
-			if err := readFile(ctx, opts, path, appendRow); err != nil {
+			if err := readFile(ctx, opts, cs, path, appendRow); err != nil {
 				yield(nil, err)
 				return
 			}
@@ -103,7 +105,7 @@ func readFiles(ctx context.Context, opts SrcOpts, files []string) coll.RowBatche
 	}
 }
 
-func readFile(ctx context.Context, opts SrcOpts, path string, appendRow func(coll.Row) bool) error {
+func readFile(ctx context.Context, opts SrcOpts, cs *coll.ColumnSet, path string, appendRow func(coll.Row) bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return errs.Wrap(err, "open csv file", "path", path)
@@ -155,8 +157,8 @@ func readFile(ctx context.Context, opts SrcOpts, path string, appendRow func(col
 		if err != nil {
 			return errs.Wrap(err, "read csv row", "path", path)
 		}
-		row := recordToRow(headers, record)
-		applyMerge(row, opts.Merge)
+		row := recordToRow(cs, headers, record)
+		row = applyMerge(cs, row, opts.Merge)
 		applyNumbers(row, opts.Numbers)
 		applyEmpty(row, opts.NoEmpty, opts.EmptyIsNull)
 		if !appendRow(row) {
@@ -165,8 +167,12 @@ func readFile(ctx context.Context, opts SrcOpts, path string, appendRow func(col
 	}
 }
 
-func recordToRow(headers, record []string) coll.Row {
-	row := make(coll.Row, len(record))
+// recordToRow builds a row positionally against cs, registering each
+// header (in file order) the first time it's seen. Headers repeated across
+// files feeding the same collection resolve to their already-assigned
+// index, keeping every row in this collection aligned.
+func recordToRow(cs *coll.ColumnSet, headers, record []string) coll.Row {
+	row := make(coll.Row, cs.Len())
 	for i, val := range record {
 		key := ""
 		if i < len(headers) {
@@ -175,52 +181,68 @@ func recordToRow(headers, record []string) coll.Row {
 		if key == "" {
 			key = strconv.Itoa(i)
 		}
-		row[key] = val
+		idx := cs.Index(key)
+		if idx >= len(row) {
+			grown := make(coll.Row, idx+1)
+			copy(grown, row)
+			row = grown
+		}
+		row[idx] = val
 	}
 	return row
 }
 
-func applyMerge(row coll.Row, merge map[string]any) {
+// applyMerge fills in default values for keys absent from row. merge is a
+// plain Go map (unordered) — since these are constant/default values with
+// no natural source order, any relative index assigned among merge-only
+// keys is incidental, not a documented ordering guarantee.
+func applyMerge(cs *coll.ColumnSet, row coll.Row, merge map[string]any) coll.Row {
 	for k, v := range merge {
-		if _, ok := row[k]; !ok {
-			row[k] = v
+		idx := cs.Index(k)
+		if idx >= len(row) {
+			grown := make(coll.Row, idx+1)
+			copy(grown, row)
+			row = grown
+		}
+		if row[idx] == nil {
+			row[idx] = v
 		}
 	}
+	return row
 }
 
 func applyNumbers(row coll.Row, on bool) {
 	if !on {
 		return
 	}
-	for k, v := range row {
+	for i, v := range row {
 		s, ok := v.(string)
 		if !ok || s == "" {
 			continue
 		}
-		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-			row[k] = i
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			row[i] = n
 			continue
 		}
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			row[k] = f
+			row[i] = f
 		}
 	}
 }
 
+// applyEmpty blanks empty-string cells to nil under either flag. A
+// positional row can't represent "field truly absent" versus "field
+// present but null" for a non-trailing column (removing a middle element
+// would shift every later column's meaning) — both NoEmpty and EmptyIsNull
+// collapse to the same nil-out here, matching how Row.Cell already treats
+// "nil" and "not grown that far" identically downstream.
 func applyEmpty(row coll.Row, noEmpty, emptyNull bool) {
-	if noEmpty {
-		for k, v := range row {
-			if s, ok := v.(string); ok && s == "" {
-				delete(row, k)
-			}
-		}
+	if !noEmpty && !emptyNull {
 		return
 	}
-	if emptyNull {
-		for k, v := range row {
-			if s, ok := v.(string); ok && s == "" {
-				row[k] = nil
-			}
+	for i, v := range row {
+		if s, ok := v.(string); ok && s == "" {
+			row[i] = nil
 		}
 	}
 }

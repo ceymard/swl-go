@@ -8,17 +8,18 @@ import (
 )
 
 func TestTransformHstoreColumns(t *testing.T) {
+	cols := []string{"id", "meta"}
 	row := coll.Row{
-		"id": int64(1),
-		"meta": map[string]any{
+		int64(1),
+		map[string]any{
 			"role": "admin",
 			"team": "ops",
 		},
 	}
-	out := transformHstoreColumns(row, []string{"meta"})
-	s, ok := out["meta"].(string)
+	out := transformHstoreColumns(row, cols, []string{"meta"})
+	s, ok := out.Cell(1).(string)
 	if !ok {
-		t.Fatalf("meta type %T", out["meta"])
+		t.Fatalf("meta type %T", out.Cell(1))
 	}
 	if s != `"role"=>"admin","team"=>"ops"` {
 		t.Fatalf("hstore %q", s)
@@ -26,10 +27,11 @@ func TestTransformHstoreColumns(t *testing.T) {
 }
 
 func TestTransformHstoreSkipsString(t *testing.T) {
-	row := coll.Row{"meta": `"a"=>"b"`}
-	out := transformHstoreColumns(row, []string{"meta"})
-	if out["meta"] != `"a"=>"b"` {
-		t.Fatalf("got %+v", out["meta"])
+	cols := []string{"meta"}
+	row := coll.Row{`"a"=>"b"`}
+	out := transformHstoreColumns(row, cols, []string{"meta"})
+	if out.Cell(0) != `"a"=>"b"` {
+		t.Fatalf("got %+v", out.Cell(0))
 	}
 }
 

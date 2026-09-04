@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ceymard/swl-go/handler"
-	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
 	"github.com/ceymard/swl-go/internal/pipeline"
 	"github.com/ceymard/swl-go/internal/runner"
@@ -39,8 +38,8 @@ func TestXLSXToSQLitePipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []coll.Row
-	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Rows: &rows}, handler.Meta{})
+	var snaps []swltest.Snapshot
+	handler.Register(swltest.CollectSinkID, swltest.RowCollectSink{Snaps: &snaps}, handler.Meta{})
 	handler.RegisterParser(swltest.CollectSinkID, func(_ string, _ []string) (any, error) {
 		return struct{}{}, nil
 	})
@@ -48,17 +47,23 @@ func TestXLSXToSQLitePipeline(t *testing.T) {
 	if err := runner.Run(cfg, handler.Reg, p2); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) < 2 {
-		t.Fatalf("rows %d", len(rows))
+	total := 0
+	for _, s := range snaps {
+		total += len(s.Rows)
+	}
+	if total < 2 {
+		t.Fatalf("rows %d", total)
 	}
 	names := map[string]bool{}
-	for _, r := range rows {
-		if n, ok := r["name"].(string); ok {
-			names[n] = true
+	for _, s := range snaps {
+		for i := range s.Rows {
+			if n, ok := s.Cell(i, "name").(string); ok {
+				names[n] = true
+			}
 		}
 	}
 	if !names["alice"] || !names["bob"] {
-		t.Fatalf("rows %+v", rows)
+		t.Fatalf("rows %+v", snaps)
 	}
 }
 

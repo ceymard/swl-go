@@ -73,9 +73,11 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tun *ssh
 			if cfg.Messages != nil {
 				cfg.Log(3, sqlText)
 			}
+			cs := coll.NewColumnSet()
 			c := coll.Collection{
-				Name: spec.Name,
-				Rows: queryRows(ctx, db, sqlText),
+				Name:    spec.Name,
+				Columns: cs,
+				Rows:    queryRows(ctx, db, cs, sqlText),
 			}
 			if !yield(c, nil) {
 				return
@@ -84,7 +86,7 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tun *ssh
 	}
 }
 
-func queryRows(ctx context.Context, db *sql.DB, query string) coll.RowBatches {
+func queryRows(ctx context.Context, db *sql.DB, cs *coll.ColumnSet, query string) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
@@ -97,6 +99,11 @@ func queryRows(ctx context.Context, db *sql.DB, query string) coll.RowBatches {
 		if err != nil {
 			yield(nil, errs.Wrap(err, "mssql columns"))
 			return
+		}
+		// rows.Columns() is already ordered; assign indexes 0..n-1 up front
+		// so every row in this query shares the same positional layout.
+		for _, name := range cols {
+			cs.Index(name)
 		}
 
 		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
@@ -111,8 +118,8 @@ func queryRows(ctx context.Context, db *sql.DB, query string) coll.RowBatches {
 				return
 			}
 			row := make(coll.Row, len(cols))
-			for i, name := range cols {
-				row[name] = normalizeCell(raw[i])
+			for i := range cols {
+				row[i] = normalizeCell(raw[i])
 			}
 			batch = append(batch, row)
 			if len(batch) == coll.DefaultBatchSize {

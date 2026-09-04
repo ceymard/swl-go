@@ -89,11 +89,15 @@ func TestSourceColumnProjection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Columns is only populated once the stream starts pulling rows
+			// (indexes are seeded lazily inside readFile), so look them up
+			// per batch rather than before ranging c.Rows.
+			if _, ok := c.Columns.Lookup("extra"); ok {
+				t.Fatalf("extra column present: %+v", c.Columns.Columns())
+			}
+			nameIdx, _ := c.Columns.Lookup("name")
 			for _, row := range batch {
-				if _, ok := row["extra"]; ok {
-					t.Fatalf("extra column present: %+v", row)
-				}
-				if row["name"] != "alice" {
+				if row.Cell(nameIdx) != "alice" {
 					t.Fatalf("row %+v", row)
 				}
 			}
@@ -106,11 +110,12 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 	out := filepath.Join(dir, "people.parquet")
 
 	stream := func(yield func(coll.Collection, error) bool) {
+		cs := coll.NewColumnSet()
 		rows := coll.SliceRowBatches([]coll.Row{
-			{"id": int64(1), "name": "alice"},
-			{"id": int64(2), "name": "bob"},
+			coll.RowFromMap(cs, map[string]any{"id": int64(1), "name": "alice"}),
+			coll.RowFromMap(cs, map[string]any{"id": int64(2), "name": "bob"}),
 		})
-		yield(coll.Collection{Name: "people", Rows: rows}, nil)
+		yield(coll.Collection{Name: "people", Columns: cs, Rows: rows}, nil)
 	}
 	sink := parquet.Sink{}
 	opts, _ := parquet.ParseSinkOptions(out, nil)
@@ -144,7 +149,9 @@ func TestSinkDirectoryLayout(t *testing.T) {
 	dir := t.TempDir()
 	outDir := filepath.Join(dir, "out")
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: "users", Rows: coll.SliceRowBatches([]coll.Row{{"id": int64(1)}})}, nil)
+		cs := coll.NewColumnSet()
+		row := coll.RowFromMap(cs, map[string]any{"id": int64(1)})
+		yield(coll.Collection{Name: "users", Columns: cs, Rows: coll.SliceRowBatches([]coll.Row{row})}, nil)
 	}
 	sink := parquet.Sink{}
 	opts, _ := parquet.ParseSinkOptions(outDir, nil)

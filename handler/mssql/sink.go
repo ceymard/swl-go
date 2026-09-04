@@ -55,7 +55,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 
 func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll.Row) (handlers.RowWriter, error) {
 	table := col.Name
-	cols := columnNames(firstRow)
+	cols := columnNames(col)
 
 	if h.opts.Drop {
 		stmt := "DROP TABLE IF EXISTS " + quoteTable(table)
@@ -203,7 +203,7 @@ func (w *batchWriter) flush() error {
 	for i, row := range w.pending {
 		ph := make([]string, len(w.cols))
 		for j, c := range w.cols {
-			v, err := bindValue(row[c])
+			v, err := bindValue(row.Cell(j))
 			if err != nil {
 				return errs.Wrap(err, "bind value", "column", c)
 			}
@@ -286,7 +286,7 @@ WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s);`,
 func buildCreateTable(table string, cols []string, sample coll.Row) string {
 	parts := make([]string, len(cols))
 	for i, c := range cols {
-		parts[i] = quoteColumn(c) + " " + inferColumnType(sample[c])
+		parts[i] = quoteColumn(c) + " " + inferColumnType(sample.Cell(i))
 	}
 	return fmt.Sprintf("IF OBJECT_ID(%s, 'U') IS NULL CREATE TABLE %s (%s)",
 		quoteLiteral(table), quoteTable(table), strings.Join(parts, ", "))

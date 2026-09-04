@@ -1,18 +1,22 @@
 package duckdb
 
 import (
-	"sort"
-
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/jsonx"
 )
 
-func columnNames(row coll.Row) []string {
-	names := make([]string, 0, len(row))
-	for k := range row {
-		names = append(names, k)
+// columnNames snapshots col's columns at Open time, in natural discovery
+// order (no sort — see plan's "Sink output order"). Columns appearing in
+// rows after this snapshot are silently dropped, matching prior behavior.
+func columnNames(col coll.Collection) []string {
+	if col.Columns == nil {
+		return nil
 	}
-	sort.Strings(names)
+	cs := col.Columns.Columns()
+	names := make([]string, len(cs))
+	for i, c := range cs {
+		names[i] = c.ColumnName
+	}
 	return names
 }
 
@@ -36,17 +40,20 @@ func inferColumnType(v any) string {
 	}
 }
 
+// normalizeCell converts nested cell values (a JSON blob column's own
+// contents, not a top-level row) — these stay as generic map[string]any/
+// []any, unrelated to any ColumnSet.
 func normalizeCell(v any) any {
 	if v == nil {
 		return nil
 	}
 	switch x := v.(type) {
 	case map[string]any:
-		row := make(coll.Row, len(x))
+		out := make(map[string]any, len(x))
 		for k, val := range x {
-			row[k] = normalizeCell(val)
+			out[k] = normalizeCell(val)
 		}
-		return row
+		return out
 	case []any:
 		out := make([]any, len(x))
 		for i, val := range x {
@@ -60,24 +67,26 @@ func normalizeCell(v any) any {
 	}
 }
 
-func rowFromJSONCell(v any) (coll.Row, error) {
+// rowFromJSONCell builds a positional row against cs from a to_json(...)
+// scan result (a map, a JSON string, or raw bytes to be parsed as one).
+func rowFromJSONCell(cs *coll.ColumnSet, v any) (coll.Row, error) {
 	switch x := v.(type) {
 	case map[string]any:
-		row := make(coll.Row, len(x))
+		normalized := make(map[string]any, len(x))
 		for k, val := range x {
-			row[k] = normalizeCell(val)
+			normalized[k] = normalizeCell(val)
 		}
-		return row, nil
+		return coll.RowFromMap(cs, normalized), nil
 	case string:
 		var m map[string]any
 		if err := jsonx.Unmarshal([]byte(x), &m); err != nil {
 			return nil, err
 		}
-		return rowFromJSONCell(m)
+		return rowFromJSONCell(cs, m)
 	case []byte:
-		return rowFromJSONCell(string(x))
+		return rowFromJSONCell(cs, string(x))
 	default:
-		return coll.Row{}, nil
+		return coll.RowFromMap(cs, nil), nil
 	}
 }
 

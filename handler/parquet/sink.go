@@ -40,6 +40,12 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 		if err != nil {
 			return err
 		}
+		var cols []string
+		if c.Columns != nil {
+			for _, col := range c.Columns.Columns() {
+				cols = append(cols, col.ColumnName)
+			}
+		}
 		outPath, err := sinkPath(opts.Path, c.Name)
 		if err != nil {
 			return err
@@ -50,7 +56,7 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 		if cfg.Messages != nil {
 			cfg.Log(2, "writing", outPath)
 		}
-		if err := writeParquetFile(outPath, rows); err != nil {
+		if err := writeParquetFile(outPath, cols, normalizeRows(cols, rows)); err != nil {
 			return errs.Wrap(err, "write parquet", "path", outPath)
 		}
 		wrote = true
@@ -58,23 +64,28 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 	return nil
 }
 
-func collectRows(rows coll.RowBatches) ([]map[string]any, error) {
-	var out []map[string]any
+func collectRows(rows coll.RowBatches) ([]coll.Row, error) {
+	var out []coll.Row
 	for batch, err := range rows {
 		if err != nil {
 			return nil, err
 		}
-		for _, row := range batch {
-			out = append(out, normalizeRow(row))
-		}
+		out = append(out, batch...)
 	}
 	return out, nil
 }
 
-func normalizeRow(row coll.Row) map[string]any {
-	out := make(map[string]any, len(row))
-	for k, v := range row {
-		out[k] = sinkValue(v)
+// normalizeRows converts positional rows to the map[string]any shape the
+// parquet-go writer expects, using cols (the collection's final, complete
+// column snapshot) to name each cell.
+func normalizeRows(cols []string, rows []coll.Row) []map[string]any {
+	out := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		m := make(map[string]any, len(cols))
+		for j, c := range cols {
+			m[c] = sinkValue(row.Cell(j))
+		}
+		out[i] = m
 	}
 	return out
 }

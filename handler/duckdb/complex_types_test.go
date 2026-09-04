@@ -60,27 +60,27 @@ func TestSourceComplexTypes(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	row := snaps[0].Rows[0]
+	cell := func(name string) any { return snaps[0].Cell(0, name) }
 
-	tags, ok := row["tags"].([]any)
+	tags, ok := cell("tags").([]any)
 	if !ok {
-		t.Fatalf("tags type %T", row["tags"])
+		t.Fatalf("tags type %T", cell("tags"))
 	}
 	if !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
 		t.Fatalf("tags %+v", tags)
 	}
 
-	meta, ok := row["meta"].(map[string]any)
+	meta, ok := cell("meta").(map[string]any)
 	if !ok {
-		t.Fatalf("meta type %T", row["meta"])
+		t.Fatalf("meta type %T", cell("meta"))
 	}
 	if meta["role"] != "admin" || meta["team"] != "ops" {
 		t.Fatalf("meta %+v", meta)
 	}
 
-	attrs, ok := row["attrs"].(map[string]any)
+	attrs, ok := cell("attrs").(map[string]any)
 	if !ok {
-		t.Fatalf("attrs type %T", row["attrs"])
+		t.Fatalf("attrs type %T", cell("attrs"))
 	}
 	if attrs["k"] != "x" {
 		t.Fatalf("attrs k %+v", attrs["k"])
@@ -128,14 +128,13 @@ func TestSinkComplexTypesRoundTrip(t *testing.T) {
 		t.Fatalf("got %+v", snaps)
 	}
 
-	row := snaps[0].Rows[0]
-	tags, ok := row["tags"].([]any)
+	tags, ok := snaps[0].Cell(0, "tags").([]any)
 	if !ok || !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
-		t.Fatalf("tags %+v", row["tags"])
+		t.Fatalf("tags %+v", snaps[0].Cell(0, "tags"))
 	}
-	meta, ok := row["meta"].(map[string]any)
+	meta, ok := snaps[0].Cell(0, "meta").(map[string]any)
 	if !ok || meta["role"] != "admin" {
-		t.Fatalf("meta %+v", row["meta"])
+		t.Fatalf("meta %+v", snaps[0].Cell(0, "meta"))
 	}
 }
 
@@ -162,9 +161,9 @@ func TestSourceJSONColumnWithNestedData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, ok := snaps[0].Rows[0]["payload"].(map[string]any)
+	payload, ok := snaps[0].Cell(0, "payload").(map[string]any)
 	if !ok {
-		t.Fatalf("payload type %T", snaps[0].Rows[0]["payload"])
+		t.Fatalf("payload type %T", snaps[0].Cell(0, "payload"))
 	}
 	meta, ok := payload["meta"].(map[string]any)
 	if !ok {
@@ -191,21 +190,23 @@ func TestSourceJSONColumnWithNestedData(t *testing.T) {
 func TestSinkJSONColumnRoundTrip(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.duckdb")
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldBatch func([]coll.Row, error) bool) {
-			yieldBatch([]coll.Row{{
-				"id": int64(1),
-				"payload": map[string]any{
-					"users": []any{
-						map[string]any{"id": int64(1), "tags": []any{"a", "b"}},
-					},
-					"meta": map[string]any{
-						"count": int64(2),
-						"nested": map[string]any{"ok": true},
-					},
+		cs := coll.NewColumnSet()
+		row := coll.RowFromMap(cs, map[string]any{
+			"id": int64(1),
+			"payload": map[string]any{
+				"users": []any{
+					map[string]any{"id": int64(1), "tags": []any{"a", "b"}},
 				},
-			}}, nil)
+				"meta": map[string]any{
+					"count":  int64(2),
+					"nested": map[string]any{"ok": true},
+				},
+			},
+		})
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			yieldBatch([]coll.Row{row}, nil)
 		}
-		yield(coll.Collection{Name: "docs", Rows: rows}, nil)
+		yield(coll.Collection{Name: "docs", Columns: cs, Rows: rows}, nil)
 	}
 
 	sinkOpts, _ := duckdb.ParseSinkOptions(outPath, nil)
@@ -223,7 +224,7 @@ func TestSinkJSONColumnRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := snaps[0].Rows[0]["payload"].(map[string]any)
+	payload := snaps[0].Cell(0, "payload").(map[string]any)
 	meta := payload["meta"].(map[string]any)
 	switch c := meta["count"].(type) {
 	case int64:

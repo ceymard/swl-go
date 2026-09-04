@@ -63,9 +63,11 @@ func streamDocument(doc *parsedDoc) coll.Stream {
 			}
 			acc[name] = rows
 
+			emitRows, cs := rowsToEmit(rows)
 			c := coll.Collection{
-				Name: name,
-				Rows: coll.SliceRowBatches(rowsToEmit(rows)),
+				Name:    name,
+				Columns: cs,
+				Rows:    coll.SliceRowBatches(emitRows),
 			}
 			if !yield(c, nil) {
 				return
@@ -80,8 +82,8 @@ func expandCollectionItems(items []any, acc map[string][]any) ([]any, error) {
 		switch x := item.(type) {
 		case *jsGenerator:
 			before := len(out)
-			err := x.run(acc, func(row coll.Row) error {
-				out = append(out, row)
+			err := x.run(acc, func(item any) error {
+				out = append(out, item)
 				return nil
 			})
 			if err != nil {
@@ -97,16 +99,20 @@ func expandCollectionItems(items []any, acc map[string][]any) ([]any, error) {
 	return out, nil
 }
 
-func rowsToEmit(stored []any) []coll.Row {
+// rowsToEmit builds positional rows from stored (object-shaped items become
+// rows via RowFromMap; scalars/arrays are wrapped under a synthetic "value"
+// column), plus the ColumnSet they were built against.
+func rowsToEmit(stored []any) ([]coll.Row, *coll.ColumnSet) {
+	cs := coll.NewColumnSet()
 	rows := make([]coll.Row, 0, len(stored))
 	for _, item := range stored {
-		if row, ok := itemToRow(item); ok {
-			rows = append(rows, stripMeta(row))
+		if m, ok := itemToMap(item); ok {
+			rows = append(rows, coll.RowFromMap(cs, stripMeta(m)))
 			continue
 		}
-		rows = append(rows, coll.Row{"value": item})
+		rows = append(rows, coll.RowFromMap(cs, map[string]any{"value": item}))
 	}
-	return rows
+	return rows, cs
 }
 
 var _ handlers.Source = Source{}

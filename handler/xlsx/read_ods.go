@@ -39,7 +39,7 @@ func (b *odsBook) sheetSpecs(opts SrcOpts) ([]SheetSpec, error) {
 	return resolveSheetSpecs(names, opts), nil
 }
 
-func (b *odsBook) readSheet(spec SheetSpec) ([]coll.Row, error) {
+func (b *odsBook) readSheet(spec SheetSpec) ([]coll.Row, *coll.ColumnSet, error) {
 	var table *ods.Table
 	for i := range b.doc.Table {
 		if b.doc.Table[i].Name == spec.Name {
@@ -48,7 +48,7 @@ func (b *odsBook) readSheet(spec SheetSpec) ([]coll.Row, error) {
 		}
 	}
 	if table == nil {
-		return nil, errs.New(`no such sheet "` + spec.Name + `"`)
+		return nil, nil, errs.New(`no such sheet "` + spec.Name + `"`)
 	}
 	return rowsFromTable(table.Strings(), spec, columnName)
 }

@@ -42,7 +42,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 				return
 			}
 
-			rows, err := wb.readSheet(spec)
+			rows, cs, err := wb.readSheet(spec)
 			if err != nil {
 				yield(coll.Collection{}, err)
 				return
@@ -55,8 +55,9 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 				continue
 			}
 			c := coll.Collection{
-				Name: emitName,
-				Rows: coll.SliceRowBatches(rows),
+				Name:    emitName,
+				Columns: cs,
+				Rows:    coll.SliceRowBatches(rows),
 			}
 			if !yield(c, nil) {
 				return
@@ -133,15 +134,19 @@ func headerIndexes(headerRow []string, headers []string, include bool) []int {
 	return indexes
 }
 
-func rowsFromTable(table [][]string, spec SheetSpec, colName func(int) string) ([]coll.Row, error) {
+func rowsFromTable(table [][]string, spec SheetSpec, colName func(int) string) ([]coll.Row, *coll.ColumnSet, error) {
 	if len(table) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	headers := readHeaders(table[0], spec.Include)
 	if len(headers) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	indexes := headerIndexes(table[0], headers, spec.Include)
+	cs := coll.NewColumnSet()
+	for _, h := range headers {
+		cs.Index(h)
+	}
 
 	var out []coll.Row
 	for line := 1; line < len(table); line++ {
@@ -149,15 +154,17 @@ func rowsFromTable(table [][]string, spec SheetSpec, colName func(int) string) (
 		values := table[line]
 		row, found, err := buildRow(values, indexes, headers, spec, rowNum, colName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if found {
 			out = append(out, row)
 		}
 	}
-	return out, nil
+	return out, cs, nil
 }
 
+// buildRow's cell at position j lands at row[j], which is also headers[j]'s
+// ColumnSet index (cs was assigned in headers order by rowsFromTable).
 func buildRow(values []string, indexes []int, headers []string, spec SheetSpec, rowNum int, colName func(int) string) (coll.Row, bool, error) {
 	row := make(coll.Row, len(headers))
 	found := false
@@ -176,7 +183,7 @@ func buildRow(values []string, indexes []int, headers []string, spec SheetSpec, 
 				return nil, false, errs.New("the cell " + ref + " (" + head + ") contained an error: " + errText)
 			}
 		}
-		row[head] = cell
+		row[j] = cell
 		if !isEmpty(cell) {
 			found = true
 		}
@@ -240,7 +247,7 @@ func openWorkbook(path string) (sheetReader, error) {
 type sheetReader interface {
 	Close() error
 	sheetSpecs(opts SrcOpts) ([]SheetSpec, error)
-	readSheet(spec SheetSpec) ([]coll.Row, error)
+	readSheet(spec SheetSpec) ([]coll.Row, *coll.ColumnSet, error)
 }
 
 func itoa(n int) string {

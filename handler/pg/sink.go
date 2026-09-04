@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -88,7 +89,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 			if h.cfg.Messages != nil {
 				h.cfg.Log(1, "creating", col.Name)
 			}
-			if _, err := h.tx.Exec(ctx, buildCreateTable(fqTable, columnNames(firstRow))); err != nil {
+			if _, err := h.tx.Exec(ctx, buildCreateTable(fqTable, columnNames(col))); err != nil {
 				return nil, errs.Wrap(err, "create table", "table", col.Name)
 			}
 		}
@@ -126,7 +127,7 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		return nil, err
 	}
 
-	cols := columnNames(firstRow)
+	cols := columnNames(col)
 	tempTable := tempTableName(col.Name)
 	if _, err := h.tx.Exec(ctx, fmt.Sprintf(`CREATE TEMP TABLE %s (jsondata json)`, tempTable)); err != nil {
 		return nil, errs.Wrap(err, "create temp copy table", "table", col.Name)
@@ -275,8 +276,8 @@ func (w *copyWriter) Close() error {
 }
 
 func (w *copyWriter) writeRow(row coll.Row) error {
-	row = transformHstoreColumns(row, w.hstoreCols)
-	payload, err := copyLine(row)
+	row = transformHstoreColumns(row, w.cols, w.hstoreCols)
+	payload, err := copyLine(w.cols, row)
 	if err != nil {
 		return err
 	}
@@ -286,13 +287,29 @@ func (w *copyWriter) writeRow(row coll.Row) error {
 	return nil
 }
 
-func copyLine(row coll.Row) ([]byte, error) {
-	data, err := jsonx.Marshal(row)
-	if err != nil {
-		return nil, err
+// copyLine encodes row as a JSON object directly from (cols, cell) pairs —
+// no intermediate map[string]any allocation.
+func copyLine(cols []string, row coll.Row) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, c := range cols {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		key, err := jsonx.Marshal(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(key)
+		buf.WriteByte(':')
+		val, err := jsonx.Marshal(row.Cell(i))
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(val)
 	}
-	s := string(data)
-	s = strings.ReplaceAll(s, "@", "@@")
+	buf.WriteByte('}')
+	s := strings.ReplaceAll(buf.String(), "@", "@@")
 	return []byte("@" + s + "@\n"), nil
 }
 

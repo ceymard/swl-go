@@ -8,8 +8,38 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/style"
 )
+
+// printPositionalRow renders row as "key: value, ..." using names[i] for
+// row[i] — the top-level entry point for a Row (positional, needs its
+// collection's column names to recover keys). Nested cell values that are
+// still map[string]any (an unflattened JSON blob column) keep going
+// through printValue/printMap unchanged.
+func printPositionalRow(out io.Writer, names []string, row coll.Row, colorize bool) error {
+	n := len(row)
+	if len(names) < n {
+		n = len(names)
+	}
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			if _, err := io.WriteString(out, style.Sep(", ", colorize)); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(out, style.Key(names[i], colorize)); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(out, style.Sep(": ", colorize)); err != nil {
+			return err
+		}
+		if err := printValue(out, row.Cell(i), colorize, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // printValue renders v with type-aware colors (swl2 print_value).
 func printValue(out io.Writer, v any, colorize bool, outside bool) error {

@@ -1,6 +1,7 @@
 package duckdb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -53,7 +54,7 @@ func (h *sinkHooks) Init(ctx context.Context) error {
 
 func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll.Row) (handlers.RowWriter, error) {
 	schema, table := splitSchemaTable(col.Name)
-	cols := columnNames(firstRow)
+	cols := columnNames(col)
 
 	if schema != "main" {
 		stmt := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdent(schema))
@@ -205,7 +206,7 @@ func (w *collectionWriter) Close() error {
 }
 
 func (w *collectionWriter) append(row coll.Row) error {
-	b, err := jsonx.Marshal(row)
+	b, err := marshalRowJSON(w.cols, row)
 	if err != nil {
 		return errs.Wrap(err, "marshal row json")
 	}
@@ -214,6 +215,31 @@ func (w *collectionWriter) append(row coll.Row) error {
 		return w.flush()
 	}
 	return nil
+}
+
+// marshalRowJSON encodes row as a JSON object directly from (cols, cell)
+// pairs — no intermediate map[string]any allocation.
+func marshalRowJSON(cols []string, row coll.Row) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, c := range cols {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		key, err := jsonx.Marshal(c)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(key)
+		buf.WriteByte(':')
+		val, err := jsonx.Marshal(row.Cell(i))
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(val)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 func (w *collectionWriter) flush() error {
@@ -237,7 +263,7 @@ func (w *collectionWriter) flush() error {
 func buildCreateTable(schema, table string, cols []string, sample coll.Row) string {
 	parts := make([]string, len(cols))
 	for i, c := range cols {
-		parts[i] = fmt.Sprintf(`%s %s`, quoteIdent(c), inferColumnType(sample[c]))
+		parts[i] = fmt.Sprintf(`%s %s`, quoteIdent(c), inferColumnType(sample.Cell(i)))
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (%s)`,
 		quoteIdent(schema), quoteIdent(table), strings.Join(parts, ", "))

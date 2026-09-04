@@ -34,7 +34,7 @@ func (m *mockHooks) Close() error { return nil }
 func TestConsumeHooksRollbackOnWriteError(t *testing.T) {
 	in := stream.Of(coll.Collection{
 		Name: "t",
-		Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}, {"a": 2}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{1}, {2}}),
 	})
 	h := &mockHooks{}
 	err := handlers.ConsumeHooks(handlers.Config{Ctx: context.Background()}, h, in)

@@ -36,7 +36,14 @@ func ParseOptions(argv []string) (any, error) {
 
 func (Transform) Transform(ctx context.Context, cfg handlers.Config, in coll.Stream, raw any) (coll.Stream, error) {
 	opts := raw.(Options)
-	return stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		return flatten.Unflatten(row, opts.NoEmpty), nil
+	return stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		// unflatten collapses many dotted-path input columns into few
+		// output columns — always a fresh output ColumnSet.
+		inCols := c.Columns
+		outCols := coll.NewColumnSet()
+		cols := flatten.ColumnCache(inCols)
+		return outCols, func(row coll.Row) (coll.Row, error) {
+			return flatten.UnflattenRow(cols(), row, opts.NoEmpty, outCols), nil
+		}
 	}), nil
 }

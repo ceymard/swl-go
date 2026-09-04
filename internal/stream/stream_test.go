@@ -8,8 +8,8 @@ import (
 )
 
 func TestConcatOrder(t *testing.T) {
-	a := stream.Of(coll.Collection{Name: "a", Rows: coll.SliceRowBatches([]coll.Row{{"x": 1}})})
-	b := stream.Of(coll.Collection{Name: "b", Rows: coll.SliceRowBatches([]coll.Row{{"y": 2}})})
+	a := stream.Of(coll.Collection{Name: "a", Rows: coll.SliceRowBatches([]coll.Row{{1}})})
+	b := stream.Of(coll.Collection{Name: "b", Rows: coll.SliceRowBatches([]coll.Row{{2}})})
 	var names []string
 	for c, err := range stream.Concat(a, b) {
 		if err != nil {
@@ -22,13 +22,41 @@ func TestConcatOrder(t *testing.T) {
 	}
 }
 
+func TestConcatForwardsCollectionError(t *testing.T) {
+	sentinel := errSentinel{}
+	a := func(yield func(coll.Collection, error) bool) {
+		yield(coll.Collection{}, sentinel)
+	}
+	b := stream.Of(coll.Collection{Name: "b", Rows: coll.SliceRowBatches([]coll.Row{{2}})})
+
+	var gotErr error
+	var sawB bool
+	for c, err := range stream.Concat(a, b) {
+		if err != nil {
+			gotErr = err
+			continue
+		}
+		if c.Name == "b" {
+			sawB = true
+		}
+	}
+	if gotErr != sentinel {
+		t.Fatalf("got err %v, want %v", gotErr, sentinel)
+	}
+	if sawB {
+		t.Fatal("Concat kept iterating into b after a errored")
+	}
+}
+
 func TestMapRows(t *testing.T) {
 	in := stream.Of(coll.Collection{
 		Name: "t",
-		Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{1}}),
 	})
-	out := stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		return coll.Row{"b": row["a"]}, nil
+	out := stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		return c.Columns, func(row coll.Row) (coll.Row, error) {
+			return coll.Row{row.Cell(0)}, nil
+		}
 	})
 	for c, err := range out {
 		if err != nil {
@@ -39,7 +67,7 @@ func TestMapRows(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, row := range batch {
-				if row["b"] != 1 {
+				if row.Cell(0) != 1 {
 					t.Fatalf("got %v", row)
 				}
 			}
@@ -50,14 +78,16 @@ func TestMapRows(t *testing.T) {
 func TestMapRowsErrorStops(t *testing.T) {
 	in := stream.Of(coll.Collection{
 		Name: "t",
-		Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}, {"a": 2}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{1}, {2}}),
 	})
 	sentinel := errSentinel{}
-	out := stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		if row["a"] == 2 {
-			return nil, sentinel
+	out := stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		return c.Columns, func(row coll.Row) (coll.Row, error) {
+			if row.Cell(0) == 2 {
+				return nil, sentinel
+			}
+			return row, nil
 		}
-		return row, nil
 	})
 	for c, err := range out {
 		if err != nil {

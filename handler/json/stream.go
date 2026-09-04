@@ -28,11 +28,13 @@ func streamFromBytes(ctx context.Context, data []byte, source string, collection
 		return streamSingleCollection(ctx, defaultName, data), nil
 	case '{':
 		if inline {
-			var row coll.Row
-			if err := parseJSON(data, &row); err != nil {
+			var m map[string]any
+			if err := parseJSON(data, &m); err != nil {
 				return nil, err
 			}
-			return singleCollectionStream(ctx, defaultName, coll.SliceRowBatches([]coll.Row{row})), nil
+			cs := coll.NewColumnSet()
+			row := coll.RowFromMap(cs, m)
+			return singleCollectionStream(ctx, defaultName, cs, coll.SliceRowBatches([]coll.Row{row})), nil
 		}
 		return streamObjectCollections(ctx, data)
 	default:
@@ -70,8 +72,8 @@ func streamObjectCollections(ctx context.Context, data []byte) (coll.Stream, err
 			if len(raw) == 0 {
 				continue
 			}
-			rows := streamJSONArray(ctx, raw)
-			c := coll.Collection{Name: name, Rows: rows}
+			rows, cs := streamJSONArray(ctx, raw)
+			c := coll.Collection{Name: name, Columns: cs, Rows: rows}
 			if !yield(c, nil) {
 				return
 			}
@@ -81,28 +83,34 @@ func streamObjectCollections(ctx context.Context, data []byte) (coll.Stream, err
 
 func streamSingleCollection(ctx context.Context, name string, data []byte) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
-		c := coll.Collection{Name: name, Rows: streamJSONArray(ctx, data)}
+		rows, cs := streamJSONArray(ctx, data)
+		c := coll.Collection{Name: name, Columns: cs, Rows: rows}
 		yield(c, nil)
 	}
 }
 
-func singleCollectionStream(ctx context.Context, name string, rows coll.RowBatches) coll.Stream {
+func singleCollectionStream(ctx context.Context, name string, cs *coll.ColumnSet, rows coll.RowBatches) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: name, Rows: rows}, nil)
+		yield(coll.Collection{Name: name, Columns: cs, Rows: rows}, nil)
 	}
 }
 
-func streamJSONArray(ctx context.Context, data []byte) coll.RowBatches {
+// streamJSONArray returns a RowBatches iterator plus the ColumnSet it grows
+// as rows are decoded (empty until iteration starts).
+func streamJSONArray(ctx context.Context, data []byte) (coll.RowBatches, *coll.ColumnSet) {
 	data = bytes.TrimSpace(data)
+	cs := coll.NewColumnSet()
 	if len(data) > 0 && data[0] == '[' {
-		return streamJSONArrayElements(ctx, data)
+		return streamJSONArrayElements(ctx, cs, data), cs
 	}
-	return streamJSONValues(ctx, bytes.NewReader(data))
+	return streamJSONValues(ctx, cs, bytes.NewReader(data)), cs
 }
 
 // streamJSONArrayElements walks a standard JSON array by token, decoding
-// elements in batches without materializing the whole array.
-func streamJSONArrayElements(ctx context.Context, data []byte) coll.RowBatches {
+// elements in batches without materializing the whole array. Each element's
+// own top-level keys are walked in source order (see decodeRowObject) so cs
+// assigns column indexes deterministically, matching the file's field order.
+func streamJSONArrayElements(ctx context.Context, cs *coll.ColumnSet, data []byte) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		dec := jsonx.NewStreamDecoder(bytes.NewReader(data))
 		if _, err := dec.Token(); err != nil { // consume opening '['
@@ -115,8 +123,8 @@ func streamJSONArrayElements(ctx context.Context, data []byte) coll.RowBatches {
 				yield(nil, err)
 				return
 			}
-			var row coll.Row
-			if err := dec.Decode(&row); err != nil {
+			row, err := decodeRowObject(dec, cs)
+			if err != nil {
 				yield(nil, errs.Wrap(err, "decode json row"))
 				return
 			}
@@ -135,8 +143,8 @@ func streamJSONArrayElements(ctx context.Context, data []byte) coll.RowBatches {
 }
 
 // streamJSONValues decodes concatenated top-level JSON values (NDJSON-style)
-// in batches.
-func streamJSONValues(ctx context.Context, r io.Reader) coll.RowBatches {
+// in batches, in source key order per row (see decodeRowObject).
+func streamJSONValues(ctx context.Context, cs *coll.ColumnSet, r io.Reader) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
 		dec := jsonx.NewStreamDecoder(r)
 		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
@@ -145,8 +153,8 @@ func streamJSONValues(ctx context.Context, r io.Reader) coll.RowBatches {
 				yield(nil, err)
 				return
 			}
-			var row coll.Row
-			if err := dec.Decode(&row); err != nil {
+			row, err := decodeRowObject(dec, cs)
+			if err != nil {
 				yield(nil, errs.Wrap(err, "decode json row"))
 				return
 			}
@@ -162,4 +170,52 @@ func streamJSONValues(ctx context.Context, r io.Reader) coll.RowBatches {
 			yield(batch, nil)
 		}
 	}
+}
+
+// rowDecoder is the subset of *encoding/json.Decoder (or sonic's aliased
+// equivalent, guaranteed identical post the go1.27 bump) decodeRowObject
+// needs to walk a row object's top-level keys in source order.
+type rowDecoder interface {
+	Token() (json.Token, error)
+	More() bool
+	Decode(v any) error
+}
+
+// decodeRowObject walks the row object directly off dec — a single pass, no
+// raw-bytes capture and no sub-decoder — reading the row's own top-level
+// keys in source order so cs.Index assigns column indexes deterministically.
+// Nested values still decode generically into map[string]any/[]any.
+func decodeRowObject(dec rowDecoder, cs *coll.ColumnSet) (coll.Row, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return nil, errs.New("json array element must be an object")
+	}
+
+	row := make(coll.Row, cs.Len())
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, _ := keyTok.(string)
+		var cell any
+		if err := dec.Decode(&cell); err != nil {
+			return nil, err
+		}
+		idx := cs.Index(key)
+		if idx >= len(row) {
+			grown := make(coll.Row, idx+1)
+			copy(grown, row)
+			row = grown
+		}
+		row[idx] = cell
+	}
+	if _, err := dec.Token(); err != nil { // consume closing '}'
+		return nil, err
+	}
+	return row, nil
 }

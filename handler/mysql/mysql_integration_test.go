@@ -125,19 +125,19 @@ func TestIntegrationSourceComplexTypes(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	row := snaps[0].Rows[0]
+	cell := func(name string) any { return snaps[0].Cell(0, name) }
 
-	tags, ok := row["tags"].([]any)
+	tags, ok := cell("tags").([]any)
 	if !ok {
-		t.Fatalf("tags type %T", row["tags"])
+		t.Fatalf("tags type %T", cell("tags"))
 	}
 	if !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
 		t.Fatalf("tags %+v", tags)
 	}
 
-	payload, ok := row["payload"].(map[string]any)
+	payload, ok := cell("payload").(map[string]any)
 	if !ok {
-		t.Fatalf("payload type %T", row["payload"])
+		t.Fatalf("payload type %T", cell("payload"))
 	}
 	users, ok := payload["users"].([]any)
 	if !ok || len(users) != 1 {
@@ -191,13 +191,13 @@ func TestIntegrationSinkComplexTypesRoundTrip(t *testing.T) {
 		t.Fatalf("mirror %+v", mirrorSnaps)
 	}
 
-	want := srcSnaps[0].Rows[0]
-	got := mirrorSnaps[0].Rows[0]
-	if !reflect.DeepEqual(got["tags"], want["tags"]) {
-		t.Fatalf("tags mirror=%#v src=%#v", got["tags"], want["tags"])
+	wantTags, gotTags := srcSnaps[0].Cell(0, "tags"), mirrorSnaps[0].Cell(0, "tags")
+	if !reflect.DeepEqual(gotTags, wantTags) {
+		t.Fatalf("tags mirror=%#v src=%#v", gotTags, wantTags)
 	}
-	if !reflect.DeepEqual(got["payload"], want["payload"]) {
-		t.Fatalf("payload mirror=%#v src=%#v", got["payload"], want["payload"])
+	wantPayload, gotPayload := srcSnaps[0].Cell(0, "payload"), mirrorSnaps[0].Cell(0, "payload")
+	if !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("payload mirror=%#v src=%#v", gotPayload, wantPayload)
 	}
 }
 
@@ -207,16 +207,18 @@ func TestIntegrationSinkAutoCreateJSON(t *testing.T) {
 	defer cancel()
 
 	stream := func(yield func(coll.Collection, error) bool) {
+		cs := coll.NewColumnSet()
+		row := coll.RowFromMap(cs, map[string]any{
+			"id":   int64(1),
+			"tags": []any{"alpha", "beta"},
+			"payload": map[string]any{
+				"meta": map[string]any{"nested": map[string]any{"ok": true}},
+			},
+		})
 		rows := func(yieldBatch func([]coll.Row, error) bool) {
-			yieldBatch([]coll.Row{{
-				"id":   int64(1),
-				"tags": []any{"alpha", "beta"},
-				"payload": map[string]any{
-					"meta": map[string]any{"nested": map[string]any{"ok": true}},
-				},
-			}}, nil)
+			yieldBatch([]coll.Row{row}, nil)
 		}
-		yield(coll.Collection{Name: "created_docs", Rows: rows}, nil)
+		yield(coll.Collection{Name: "created_docs", Columns: cs, Rows: rows}, nil)
 	}
 
 	sinkOpts, err := mysql.ParseSinkOptions(uri, []string{"--auto-create"})
@@ -232,7 +234,7 @@ func TestIntegrationSinkAutoCreateJSON(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	payload := snaps[0].Rows[0]["payload"].(map[string]any)
+	payload := snaps[0].Cell(0, "payload").(map[string]any)
 	meta := payload["meta"].(map[string]any)
 	if meta["nested"].(map[string]any)["ok"] != true {
 		t.Fatalf("payload %+v", payload)
@@ -242,12 +244,7 @@ func TestIntegrationSinkAutoCreateJSON(t *testing.T) {
 func snapshotsToStream(snaps []swltest.Snapshot) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
 		for _, s := range snaps {
-			rows := append([]coll.Row(nil), s.Rows...)
-			c := coll.Collection{
-				Name: s.Name,
-				Rows: coll.SliceRowBatches(rows),
-			}
-			if !yield(c, nil) {
+			if !yield(s.ToCollection(), nil) {
 				return
 			}
 		}

@@ -46,18 +46,48 @@ func ParseOptions(argv []string) (any, error) {
 
 func (Transform) Transform(ctx context.Context, cfg handlers.Config, in coll.Stream, raw any) (coll.Stream, error) {
 	opts := raw.(Options)
-	only := toSet(opts.Only)
-	return stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		out := make(coll.Row, len(row))
-		for k, v := range row {
-			if only != nil && !only[k] {
-				out[k] = v
-				continue
+	return stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		// coerce preserves the key space — pass the input ColumnSet through.
+		only := indexResolver(c.Columns, opts.Only)
+		return c.Columns, func(row coll.Row) (coll.Row, error) {
+			onlyIdx := only()
+			out := make(coll.Row, len(row))
+			copy(out, row)
+			for i := range row {
+				if onlyIdx != nil && !onlyIdx[i] {
+					continue
+				}
+				out[i] = Coerce(row[i])
 			}
-			out[k] = Coerce(v)
+			return out, nil
 		}
-		return out, nil
 	}), nil
+}
+
+// indexResolver returns a function that resolves names to their ColumnSet
+// indices, re-resolving only when cs has grown since the last call (names
+// not yet discovered are simply absent from the result until they are).
+// A nil names list means "no filter" — the returned resolver always
+// yields nil.
+func indexResolver(cs *coll.ColumnSet, names []string) func() map[int]bool {
+	if names == nil {
+		return func() map[int]bool { return nil }
+	}
+	var resolved map[int]bool
+	lastLen := -1
+	return func() map[int]bool {
+		if cs == nil || cs.Len() == lastLen {
+			return resolved
+		}
+		lastLen = cs.Len()
+		resolved = make(map[int]bool, len(names))
+		for _, name := range names {
+			if idx, ok := cs.Lookup(name); ok {
+				resolved[idx] = true
+			}
+		}
+		return resolved
+	}
 }
 
 // Coerce converts a cell value to a string-friendly form for sinks.
@@ -127,22 +157,26 @@ func ParseUncoerceOptions(argv []string) (any, error) {
 
 func (UncoerceTransform) Transform(ctx context.Context, cfg handlers.Config, in coll.Stream, raw any) (coll.Stream, error) {
 	opts := raw.(UncoerceOptions)
-	only := toSet(opts.Only)
-	except := toSet(opts.Except)
-	return stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
-		out := make(coll.Row, len(row))
-		for k, v := range row {
-			if only != nil && !only[k] {
-				out[k] = v
-				continue
+	return stream.MapRows(in, func(c coll.Collection) (*coll.ColumnSet, func(coll.Row) (coll.Row, error)) {
+		// uncoerce preserves the key space — pass the input ColumnSet through.
+		only := indexResolver(c.Columns, opts.Only)
+		except := indexResolver(c.Columns, opts.Except)
+		return c.Columns, func(row coll.Row) (coll.Row, error) {
+			onlyIdx := only()
+			exceptIdx := except()
+			out := make(coll.Row, len(row))
+			copy(out, row)
+			for i := range row {
+				if onlyIdx != nil && !onlyIdx[i] {
+					continue
+				}
+				if exceptIdx != nil && exceptIdx[i] {
+					continue
+				}
+				out[i] = Uncoerce(row[i], opts)
 			}
-			if except != nil && except[k] {
-				out[k] = v
-				continue
-			}
-			out[k] = Uncoerce(v, opts)
+			return out, nil
 		}
-		return out, nil
 	}), nil
 }
 
@@ -198,15 +232,4 @@ func Uncoerce(value any, opts UncoerceOptions) any {
 
 func splitCSV(s string) []string {
 	return regexp.MustCompile(`[\n\s]*,[\s\n]*`).Split(s, -1)
-}
-
-func toSet(list []string) map[string]bool {
-	if list == nil {
-		return nil
-	}
-	m := make(map[string]bool, len(list))
-	for _, s := range list {
-		m[s] = true
-	}
-	return m
 }

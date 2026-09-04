@@ -181,7 +181,7 @@ func TestIntegrationSourceNativeTypes(t *testing.T) {
 	if len(snaps[0].Rows) == 0 {
 		t.Fatal("no rows")
 	}
-	id := snaps[0].Rows[0]["id"]
+	id := snaps[0].Cell(0, "id")
 	switch id.(type) {
 	case int32, int64, int:
 		// native integer from pgx, not json float64
@@ -215,7 +215,7 @@ func TestIntegrationSourceCustomQuery(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	if snaps[0].Rows[0]["email"] != "alice@example.com" {
+	if snaps[0].Cell(0, "email") != "alice@example.com" {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -243,19 +243,19 @@ func TestIntegrationSourceComplexTypes(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	row := snaps[0].Rows[0]
+	cell := func(name string) any { return snaps[0].Cell(0, name) }
 
-	tags, ok := row["tags"].([]any)
+	tags, ok := cell("tags").([]any)
 	if !ok {
-		t.Fatalf("tags type %T", row["tags"])
+		t.Fatalf("tags type %T", cell("tags"))
 	}
 	if !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
 		t.Fatalf("tags %+v", tags)
 	}
 
-	payload, ok := row["payload"].(map[string]any)
+	payload, ok := cell("payload").(map[string]any)
 	if !ok {
-		t.Fatalf("payload type %T", row["payload"])
+		t.Fatalf("payload type %T", cell("payload"))
 	}
 	users, ok := payload["users"].([]any)
 	if !ok || len(users) != 1 {
@@ -318,13 +318,13 @@ func TestIntegrationSinkComplexTypesRoundTrip(t *testing.T) {
 		t.Fatalf("mirror %+v", mirrorSnaps)
 	}
 
-	want := srcSnaps[0].Rows[0]
-	got := mirrorSnaps[0].Rows[0]
-	if !reflect.DeepEqual(got["tags"], want["tags"]) {
-		t.Fatalf("tags mirror=%#v src=%#v", got["tags"], want["tags"])
+	wantTags, gotTags := srcSnaps[0].Cell(0, "tags"), mirrorSnaps[0].Cell(0, "tags")
+	if !reflect.DeepEqual(gotTags, wantTags) {
+		t.Fatalf("tags mirror=%#v src=%#v", gotTags, wantTags)
 	}
-	if !reflect.DeepEqual(got["payload"], want["payload"]) {
-		t.Fatalf("payload mirror=%#v src=%#v", got["payload"], want["payload"])
+	wantPayload, gotPayload := srcSnaps[0].Cell(0, "payload"), mirrorSnaps[0].Cell(0, "payload")
+	if !reflect.DeepEqual(gotPayload, wantPayload) {
+		t.Fatalf("payload mirror=%#v src=%#v", gotPayload, wantPayload)
 	}
 }
 
@@ -341,14 +341,16 @@ func TestIntegrationSinkTextualJSONCoercion(t *testing.T) {
 	)`)
 
 	stream := func(yield func(coll.Collection, error) bool) {
+		cs := coll.NewColumnSet()
+		row := coll.RowFromMap(cs, map[string]any{
+			"id":      "42",
+			"note":    "hello",
+			"payload": `{"nested":{"ok":true,"labels":["x","y"]}}`,
+		})
 		rows := func(yieldBatch func([]coll.Row, error) bool) {
-			yieldBatch([]coll.Row{{
-				"id":      "42",
-				"note":    "hello",
-				"payload": `{"nested":{"ok":true,"labels":["x","y"]}}`,
-			}}, nil)
+			yieldBatch([]coll.Row{row}, nil)
 		}
-		yield(coll.Collection{Name: "typed_rows", Rows: rows}, nil)
+		yield(coll.Collection{Name: "typed_rows", Columns: cs, Rows: rows}, nil)
 	}
 
 	sinkOpts, err := pg.ParseSinkOptions(uri, nil)
@@ -364,8 +366,7 @@ func TestIntegrationSinkTextualJSONCoercion(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	row := snaps[0].Rows[0]
-	switch id := row["id"].(type) {
+	switch id := snaps[0].Cell(0, "id").(type) {
 	case int32:
 		if id != 42 {
 			t.Fatalf("id %v", id)
@@ -375,9 +376,9 @@ func TestIntegrationSinkTextualJSONCoercion(t *testing.T) {
 			t.Fatalf("id %v", id)
 		}
 	default:
-		t.Fatalf("id type %T val %v", row["id"], row["id"])
+		t.Fatalf("id type %T val %v", snaps[0].Cell(0, "id"), snaps[0].Cell(0, "id"))
 	}
-	payload := row["payload"]
+	payload := snaps[0].Cell(0, "payload")
 	var nested map[string]any
 	switch p := payload.(type) {
 	case map[string]any:
@@ -478,21 +479,16 @@ func TestIntegrationSQLiteTextArrayToPG(t *testing.T) {
 	if len(snaps) != 1 || len(snaps[0].Rows) != 1 {
 		t.Fatalf("got %+v", snaps)
 	}
-	tags, ok := snaps[0].Rows[0]["tags"].([]any)
+	tags, ok := snaps[0].Cell(0, "tags").([]any)
 	if !ok || !reflect.DeepEqual(tags, []any{"alpha", "beta"}) {
-		t.Fatalf("tags %#v", snaps[0].Rows[0]["tags"])
+		t.Fatalf("tags %#v", snaps[0].Cell(0, "tags"))
 	}
 }
 
 func snapshotsToStream(snaps []swltest.Snapshot) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
 		for _, s := range snaps {
-			rows := append([]coll.Row(nil), s.Rows...)
-			c := coll.Collection{
-				Name: s.Name,
-				Rows: coll.SliceRowBatches(rows),
-			}
-			if !yield(c, nil) {
+			if !yield(s.ToCollection(), nil) {
 				return
 			}
 		}

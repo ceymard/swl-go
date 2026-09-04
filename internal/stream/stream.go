@@ -48,18 +48,23 @@ func Of(collections ...coll.Collection) coll.Stream {
 	}
 }
 
-// MapRows applies fn to each row; collection name and columns pass through unchanged.
+// MapRows applies a per-collection row mapper built by build. build runs
+// once per collection and returns the output ColumnSet (pass the input
+// Collection's Columns through unchanged for a transform that preserves the
+// key space, e.g. coerce; return a fresh *coll.ColumnSet for one that
+// renames/restructures keys, e.g. flatten) plus the row-mapping function.
 // Used by transforms (flatten, coerce, …).
-func MapRows(in coll.Stream, fn func(coll.Row) (coll.Row, error)) coll.Stream {
+func MapRows(in coll.Stream, build func(c coll.Collection) (outCols *coll.ColumnSet, fn func(coll.Row) (coll.Row, error))) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
 		for c, err := range in {
 			if err != nil {
 				yield(coll.Collection{}, err)
 				return
 			}
+			outCols, fn := build(c)
 			out := coll.Collection{
 				Name:    c.Name,
-				Columns: c.Columns,
+				Columns: outCols,
 				Rows: func(yield func([]coll.Row, error) bool) {
 					for batch, err := range c.Rows {
 						if err != nil {

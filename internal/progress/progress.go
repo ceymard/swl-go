@@ -112,7 +112,7 @@ func Track(log *msg.Log, role Role, in coll.Stream) coll.Stream {
 				}
 				tr.end()
 			}
-			if !yield(coll.Collection{Name: c.Name, Rows: rows}, nil) {
+			if !yield(coll.Collection{Name: c.Name, Columns: c.Columns, Rows: rows}, nil) {
 				return
 			}
 		}

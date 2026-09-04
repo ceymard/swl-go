@@ -51,11 +51,11 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 	out := filepath.Join(dir, "out.xlsx")
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := coll.SliceRowBatches([]coll.Row{
+		rows, cs := rowsFromMaps([]map[string]any{
 			{"id": int64(1), "name": "alice"},
 			{"id": int64(2), "name": "bob"},
 		})
-		yield(coll.Collection{Name: "people", Rows: rows}, nil)
+		yield(coll.Collection{Name: "people", Columns: cs, Rows: coll.SliceRowBatches(rows)}, nil)
 	}
 
 	sink := xlsx.Sink{}
@@ -71,7 +71,7 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 	if snaps[0].Name != "people" || len(snaps[0].Rows) != 2 {
 		t.Fatalf("snaps %+v", snaps)
 	}
-	if snaps[0].Rows[0]["name"] != "alice" {
+	if snaps[0].Cell(0, "name") != "alice" {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
 	}
 }
@@ -80,11 +80,11 @@ func TestSinkReplacesExistingSheet(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "book.xlsx")
 
-	writeSink(t, out, "people", []coll.Row{{"id": int64(1), "name": "alice"}})
-	writeSink(t, out, "people", []coll.Row{{"id": int64(9), "name": "zara"}})
+	writeSink(t, out, "people", []map[string]any{{"id": int64(1), "name": "alice"}})
+	writeSink(t, out, "people", []map[string]any{{"id": int64(9), "name": "zara"}})
 
 	snaps := collectSource(t, out, xlsx.SrcOpts{File: out})
-	if len(snaps[0].Rows) != 1 || snaps[0].Rows[0]["name"] != "zara" {
+	if len(snaps[0].Rows) != 1 || snaps[0].Cell(0, "name") != "zara" {
 		t.Fatalf("snaps %+v", snaps)
 	}
 }
@@ -97,7 +97,7 @@ func TestSinkOpensExistingWorkbook(t *testing.T) {
 	setCell(t, f, "Sheet1", "A1", "keep")
 	saveExcelize(t, f, out)
 
-	writeSink(t, out, "added", []coll.Row{{"x": int64(1)}})
+	writeSink(t, out, "added", []map[string]any{{"x": int64(1)}})
 
 	wb, err := excelize.OpenFile(out)
 	if err != nil {
@@ -115,11 +115,16 @@ func TestSinkNormalizesObjectsAndDates(t *testing.T) {
 	when := time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC)
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := coll.SliceRowBatches([]coll.Row{{
+		// Pre-seed column order (A=meta, B=when) so the cell coordinates
+		// asserted below are deterministic regardless of map iteration order.
+		cs := coll.NewColumnSet()
+		cs.Index("meta")
+		cs.Index("when")
+		row := coll.RowFromMap(cs, map[string]any{
 			"when": when,
 			"meta": map[string]any{"k": "v"},
-		}})
-		yield(coll.Collection{Name: "data", Rows: rows}, nil)
+		})
+		yield(coll.Collection{Name: "data", Columns: cs, Rows: coll.SliceRowBatches([]coll.Row{row})}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, _ := xlsx.ParseSinkOptions(out, nil)
@@ -144,7 +149,7 @@ func TestSinkNormalizesObjectsAndDates(t *testing.T) {
 
 func TestSinkRejectsXLSBOutput(t *testing.T) {
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: "x", Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}})}, nil)
+		yield(coll.Collection{Name: "x", Rows: coll.SliceRowBatches([]coll.Row{{1}})}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, _ := xlsx.ParseSinkOptions("out.xlsb", nil)
@@ -174,10 +179,11 @@ func TestSinkEmptyCollection(t *testing.T) {
 	}
 }
 
-func writeSink(t *testing.T, path, sheet string, rows []coll.Row) {
+func writeSink(t *testing.T, path, sheet string, maps []map[string]any) {
 	t.Helper()
+	rows, cs := rowsFromMaps(maps)
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: sheet, Rows: coll.SliceRowBatches(rows)}, nil)
+		yield(coll.Collection{Name: sheet, Columns: cs, Rows: coll.SliceRowBatches(rows)}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, err := xlsx.ParseSinkOptions(path, nil)
