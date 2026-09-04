@@ -1,11 +1,13 @@
 package xlsx
 
 import (
+	"iter"
 	"math"
 	"strconv"
 
 	xlsb "github.com/TsubasaBE/go-xlsb"
 	"github.com/TsubasaBE/go-xlsb/workbook"
+	"github.com/TsubasaBE/go-xlsb/worksheet"
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
 )
@@ -33,41 +35,76 @@ func (b *xlsbBook) sheetSpecs(opts SrcOpts) ([]SheetSpec, error) {
 	return resolveSheetSpecs(b.wb.Sheets(), opts), nil
 }
 
+// readSheet streams ws.Rows(false) row by row instead of first materializing
+// the whole sheet into a [][]string table — a sheet with no tabular header
+// row (or one excluded by spec) is abandoned after its first row, without
+// draining the rest of the channel (draining continues under the hood via
+// the deferred cancel below only if the underlying reader supports it; here
+// we simply stop reading, which is safe since ws.Rows is per-call).
 func (b *xlsbBook) readSheet(spec SheetSpec) ([]coll.Row, *coll.ColumnSet, error) {
-	if _, err := b.wb.SheetByName(spec.Name); err != nil {
+	ws, err := b.wb.SheetByName(spec.Name)
+	if err != nil {
 		return nil, nil, errs.New(`no such sheet "` + spec.Name + `"`)
 	}
-	table, err := b.sheetTable(spec.Name)
-	if err != nil {
-		return nil, nil, err
-	}
-	return rowsFromTable(table, spec, columnName)
-}
 
-func (b *xlsbBook) sheetTable(sheetName string) ([][]string, error) {
-	ws, err := b.wb.SheetByName(sheetName)
-	if err != nil {
-		return nil, errs.Wrap(err, "read sheet", "sheet", sheetName)
+	next, stop := iter.Pull(ws.Rows(false))
+	defer stop()
+
+	firstRow, ok := next()
+	if !ok {
+		if ws.Err != nil {
+			return nil, nil, errs.Wrap(ws.Err, "read sheet", "sheet", spec.Name)
+		}
+		return nil, nil, nil // empty sheet
+	}
+	headerRow := b.rowLine(firstRow)
+	headers := readHeaders(headerRow, spec.Include)
+	if len(headers) == 0 {
+		return nil, nil, nil // not tabular — bail without draining the rest
+	}
+	indexes := headerIndexes(headerRow, headers, spec.Include)
+	cs := coll.NewColumnSet()
+	for _, h := range headers {
+		cs.Index(h)
 	}
 
-	var table [][]string
-	for rowCells := range ws.Rows(false) {
-		maxCol := 0
-		for _, c := range rowCells {
-			if c.C+1 > maxCol {
-				maxCol = c.C + 1
-			}
+	var out []coll.Row
+	rowNum := 1
+	for {
+		rowCells, ok := next()
+		if !ok {
+			break
 		}
-		line := make([]string, maxCol)
-		for _, c := range rowCells {
-			line[c.C] = b.cellString(c.V, c.Style)
+		rowNum++
+		values := b.rowLine(rowCells)
+		row, found, err := buildRow(values, indexes, headers, spec, rowNum, columnName)
+		if err != nil {
+			return nil, nil, err
 		}
-		table = append(table, line)
+		if found {
+			out = append(out, row)
+		}
 	}
 	if ws.Err != nil {
-		return nil, errs.Wrap(ws.Err, "read sheet", "sheet", sheetName)
+		return nil, nil, errs.Wrap(ws.Err, "read sheet", "sheet", spec.Name)
 	}
-	return table, nil
+	return out, cs, nil
+}
+
+// rowLine converts one xlsb row's sparse cells into a dense []string,
+// column-indexed exactly like the old sheetTable's per-row build.
+func (b *xlsbBook) rowLine(rowCells []worksheet.Cell) []string {
+	maxCol := 0
+	for _, c := range rowCells {
+		if c.C+1 > maxCol {
+			maxCol = c.C + 1
+		}
+	}
+	line := make([]string, maxCol)
+	for _, c := range rowCells {
+		line[c.C] = b.cellString(c.V, c.Style)
+	}
+	return line
 }
 
 func (b *xlsbBook) cellString(v any, style int) string {

@@ -32,55 +32,91 @@ func (b *excelizeBook) sheetSpecs(opts SrcOpts) ([]SheetSpec, error) {
 	return resolveSheetSpecs(b.file.GetSheetList(), opts), nil
 }
 
+// readSheet streams the sheet row by row instead of materializing it into a
+// [][]string table upfront (excelize.GetRows) — a sheet with no tabular
+// header row (or one excluded by spec) is abandoned after its first row,
+// without decoding the rest of its XML.
 func (b *excelizeBook) readSheet(spec SheetSpec) ([]coll.Row, *coll.ColumnSet, error) {
 	if _, err := b.file.GetSheetIndex(spec.Name); err != nil {
 		return nil, nil, errs.New(`no such sheet "` + spec.Name + `"`)
 	}
 
-	table, err := b.sheetTable(spec.Name)
+	rows, err := b.file.Rows(spec.Name)
+	if err != nil {
+		return nil, nil, errs.Wrap(err, "read sheet", "sheet", spec.Name)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, nil, nil // empty sheet
+	}
+	headerRow, err := b.rowValues(rows, spec.Name, 1)
 	if err != nil {
 		return nil, nil, err
 	}
-	return rowsFromTable(table, spec, columnName)
+	headers := readHeaders(headerRow, spec.Include)
+	if len(headers) == 0 {
+		return nil, nil, nil // not tabular — bail without reading further rows
+	}
+	indexes := headerIndexes(headerRow, headers, spec.Include)
+	cs := coll.NewColumnSet()
+	for _, h := range headers {
+		cs.Index(h)
+	}
+
+	var out []coll.Row
+	rowNum := 1
+	for rows.Next() {
+		rowNum++
+		values, err := b.rowValues(rows, spec.Name, rowNum)
+		if err != nil {
+			return nil, nil, err
+		}
+		row, found, err := buildRow(values, indexes, headers, spec, rowNum, columnName)
+		if err != nil {
+			return nil, nil, err
+		}
+		if found {
+			out = append(out, row)
+		}
+	}
+	if err := rows.Error(); err != nil {
+		return nil, nil, errs.Wrap(err, "read sheet", "sheet", spec.Name)
+	}
+	return out, cs, nil
 }
 
-func (b *excelizeBook) sheetTable(sheet string) ([][]string, error) {
-	rows, err := b.file.GetRows(sheet, excelize.Options{RawCellValue: true})
+// rowValues returns rowNum's raw cell values off the streaming iterator,
+// resolving any formula cell that has no cached value — the same
+// GetCellFormula/CalcCellValue fallback GetRows used to apply over the
+// whole sheet upfront, now done per row as rows are actually consumed.
+func (b *excelizeBook) rowValues(rows *excelize.Rows, sheet string, rowNum int) ([]string, error) {
+	values, err := rows.Columns(excelize.Options{RawCellValue: true})
 	if err != nil {
 		return nil, errs.Wrap(err, "read sheet", "sheet", sheet)
 	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-
-	out := make([][]string, len(rows))
-	for r, row := range rows {
-		out[r] = append([]string(nil), row...)
-		for c := range row {
-			coord, err := excelize.CoordinatesToCellName(c+1, r+1)
-			if err != nil {
-				continue
-			}
-			// Use cached values from the file when present (swl2/xlsx behavior).
-			// Only recalculate formula cells that have no cached value.
-			if out[r][c] != "" {
-				continue
-			}
-			formula, _ := b.file.GetCellFormula(sheet, coord)
-			if formula == "" {
-				continue
-			}
-			calc, err := b.file.CalcCellValue(sheet, coord)
-			if err != nil {
-				out[r][c] = "#ERROR"
-				continue
-			}
-			if calc != "" {
-				out[r][c] = calc
-			}
+	for c, v := range values {
+		if v != "" {
+			continue
+		}
+		coord, err := excelize.CoordinatesToCellName(c+1, rowNum)
+		if err != nil {
+			continue
+		}
+		formula, _ := b.file.GetCellFormula(sheet, coord)
+		if formula == "" {
+			continue
+		}
+		calc, err := b.file.CalcCellValue(sheet, coord)
+		if err != nil {
+			values[c] = "#ERROR"
+			continue
+		}
+		if calc != "" {
+			values[c] = calc
 		}
 	}
-	return out, nil
+	return values, nil
 }
 
 func parseInt(s string) (int64, error) {

@@ -112,7 +112,7 @@ func streamJSONArray(ctx context.Context, data []byte) (coll.RowBatches, *coll.C
 // assigns column indexes deterministically, matching the file's field order.
 func streamJSONArrayElements(ctx context.Context, cs *coll.ColumnSet, data []byte) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
-		dec := jsonx.NewStreamDecoder(bytes.NewReader(data))
+		dec := json.NewDecoder(bytes.NewReader(data))
 		if _, err := dec.Token(); err != nil { // consume opening '['
 			yield(nil, errs.Wrap(err, "decode json array"))
 			return
@@ -146,7 +146,7 @@ func streamJSONArrayElements(ctx context.Context, cs *coll.ColumnSet, data []byt
 // in batches, in source key order per row (see decodeRowObject).
 func streamJSONValues(ctx context.Context, cs *coll.ColumnSet, r io.Reader) coll.RowBatches {
 	return func(yield func([]coll.Row, error) bool) {
-		dec := jsonx.NewStreamDecoder(r)
+		dec := json.NewDecoder(r)
 		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		for dec.More() {
 			if err := ctx.Err(); err != nil {
@@ -172,20 +172,18 @@ func streamJSONValues(ctx context.Context, cs *coll.ColumnSet, r io.Reader) coll
 	}
 }
 
-// rowDecoder is the subset of *encoding/json.Decoder (or sonic's aliased
-// equivalent, guaranteed identical post the go1.27 bump) decodeRowObject
-// needs to walk a row object's top-level keys in source order.
-type rowDecoder interface {
-	Token() (json.Token, error)
-	More() bool
-	Decode(v any) error
-}
-
 // decodeRowObject walks the row object directly off dec — a single pass, no
 // raw-bytes capture and no sub-decoder — reading the row's own top-level
 // keys in source order so cs.Index assigns column indexes deterministically.
 // Nested values still decode generically into map[string]any/[]any.
-func decodeRowObject(dec rowDecoder, cs *coll.ColumnSet) (coll.Row, error) {
+//
+// dec is deliberately a stdlib *encoding/json.Decoder, not jsonx/sonic:
+// Token() is required for the single-pass walk, but whether sonic's
+// StreamDecoder exposes Token() depends on sonic's own supported-version
+// gate (decoder_compat vs decoder_native), which has already changed once
+// across sonic releases independently of our Go version — going straight to
+// stdlib here removes that dependency entirely rather than re-detecting it.
+func decodeRowObject(dec *json.Decoder, cs *coll.ColumnSet) (coll.Row, error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
