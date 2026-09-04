@@ -17,6 +17,7 @@ import (
 
 const fixtureXLSX = "../../testdata/xlsx/simple.xlsx"
 const fixtureODS = "../../testdata/xlsx/simple.ods"
+const fixtureCachedFormula = "../../testdata/xlsx/cached_formula.xlsx"
 
 func TestSourceFixtureXLSXAllSheets(t *testing.T) {
 	snaps := collectSource(t, fixtureXLSX, xlsx.SrcOpts{File: fixtureXLSX})
@@ -146,6 +147,83 @@ func TestSourceXLSXIgnoreErrors(t *testing.T) {
 	snaps := collectSource(t, path, xlsx.SrcOpts{File: path, IgnoreErrors: true})
 	if snaps[0].Rows[0]["id"] != int64(1) {
 		t.Fatalf("row %+v", snaps[0].Rows[0])
+	}
+}
+
+func TestSourceXLSXCachedFormulaPreservesValue(t *testing.T) {
+	// Regression: excelize cannot evaluate XLOOKUP against a missing sheet, but
+	// Excel stores the last computed value in the file. swl2 reads cell.v as-is;
+	// we must not overwrite cached values when recalculation fails or returns #N/A.
+	snaps := collectSource(t, fixtureCachedFormula, xlsx.SrcOpts{
+		File:   fixtureCachedFormula,
+		Sheets: []xlsx.SheetSpec{{Name: "data"}},
+	})
+	if len(snaps) != 1 || len(snaps[0].Rows) != 2 {
+		t.Fatalf("snaps %+v", snaps)
+	}
+	row := snaps[0].Rows[0]
+	if row["cached_lookup"] != "cached_lookup" {
+		t.Fatalf("cached_lookup: got %+v", row["cached_lookup"])
+	}
+	if row["cached_na"] != "cached_na" {
+		t.Fatalf("cached_na: got %+v", row["cached_na"])
+	}
+}
+
+func TestSourceXLSXFormulaRecalcWithoutCache(t *testing.T) {
+	// When a formula cell has no cached value, recalculate it (e.g. =1+1 → 2).
+	snaps := collectSource(t, fixtureCachedFormula, xlsx.SrcOpts{
+		File:   fixtureCachedFormula,
+		Sheets: []xlsx.SheetSpec{{Name: "data"}},
+	})
+	row := snaps[0].Rows[1]
+	if row["cached_lookup"] != int64(2) {
+		t.Fatalf("expected recalculated 1+1, got %+v", row["cached_lookup"])
+	}
+}
+
+func TestSourceXLSXCachedFormulaReadsAllSheets(t *testing.T) {
+	// Regression: a formula error on a later sheet must not stop earlier sheets
+	// from being emitted (the original bug only surfaced api.segments).
+	snaps := collectSource(t, fixtureCachedFormula, xlsx.SrcOpts{File: fixtureCachedFormula})
+	byName := indexSnapshots(snaps)
+	if len(byName["plain"].Rows) != 1 {
+		t.Fatalf("plain rows %+v", byName["plain"].Rows)
+	}
+	if byName["plain"].Rows[0]["segment"] != "segment" {
+		t.Fatalf("plain row %+v", byName["plain"].Rows[0])
+	}
+	if len(byName["data"].Rows) != 2 {
+		t.Fatalf("data rows %+v", byName["data"].Rows)
+	}
+}
+
+func TestSourceXLSXRealWorkbookIntegration(t *testing.T) {
+	// Optional integration test against the user's full workbook (not in CI).
+	path := filepath.Join("..", "..", "test.xlsx")
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("test.xlsx not present")
+	}
+	snaps := collectSource(t, path, xlsx.SrcOpts{
+		File: path,
+		Sheets: []xlsx.SheetSpec{
+			{Name: "api.users"},
+			{Name: "api.targets"},
+			{Name: "api.user_targets"},
+		},
+	})
+	byName := indexSnapshots(snaps)
+	if len(byName["api.users"].Rows) < 100 {
+		t.Fatalf("api.users rows %d", len(byName["api.users"].Rows))
+	}
+	if byName["api.users"].Rows[1]["email"] != "Michael.Briere@opella.com" {
+		t.Fatalf("cached formula email: %+v", byName["api.users"].Rows[1]["email"])
+	}
+	if len(byName["api.targets"].Rows) < 1000 {
+		t.Fatalf("api.targets rows %d", len(byName["api.targets"].Rows))
+	}
+	if len(byName["api.user_targets"].Rows) < 1000 {
+		t.Fatalf("api.user_targets rows %d", len(byName["api.user_targets"].Rows))
 	}
 }
 

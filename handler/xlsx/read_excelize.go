@@ -61,6 +61,11 @@ func (b *excelizeBook) sheetTable(sheet string) ([][]string, error) {
 			if err != nil {
 				continue
 			}
+			// Use cached values from the file when present (swl2/xlsx behavior).
+			// Only recalculate formula cells that have no cached value.
+			if out[r][c] != "" {
+				continue
+			}
 			formula, _ := b.file.GetCellFormula(sheet, coord)
 			if formula == "" {
 				continue
