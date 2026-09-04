@@ -27,11 +27,11 @@ func CollectStream(t *testing.T, s coll.Stream) ([]Snapshot, error) {
 			return nil, err
 		}
 		snap := Snapshot{Name: c.Name}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				return nil, err
 			}
-			snap.Rows = append(snap.Rows, row)
+			snap.Rows = append(snap.Rows, batch...)
 		}
 		out = append(out, snap)
 	}

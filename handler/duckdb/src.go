@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"iter"
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
@@ -94,8 +93,8 @@ func jsonRowsSQL(inner string) string {
 	return fmt.Sprintf("SELECT to_json(J) AS json FROM (%s) J", inner)
 }
 
-func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) iter.Seq2[coll.Row, error] {
-	return func(yield func(coll.Row, error) bool) {
+func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) coll.RowBatches {
+	return func(yield func([]coll.Row, error) bool) {
 		rows, err := db.QueryContext(ctx, jsonRowsSQL(innerSQL))
 		if err != nil {
 			yield(nil, errs.Wrap(err, "duckdb query"))
@@ -103,6 +102,7 @@ func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) iter.Seq2[c
 		}
 		defer rows.Close()
 
+		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		for rows.Next() {
 			var cell any
 			if err := rows.Scan(&cell); err != nil {
@@ -114,12 +114,20 @@ func queryJSONRows(ctx context.Context, db *sql.DB, innerSQL string) iter.Seq2[c
 				yield(nil, errs.Wrap(err, "duckdb parse row json"))
 				return
 			}
-			if !yield(row, nil) {
-				return
+			batch = append(batch, row)
+			if len(batch) == coll.DefaultBatchSize {
+				if !yield(batch, nil) {
+					return
+				}
+				batch = make([]coll.Row, 0, coll.DefaultBatchSize)
 			}
 		}
 		if err := rows.Err(); err != nil {
 			yield(nil, errs.Wrap(err, "duckdb rows"))
+			return
+		}
+		if len(batch) > 0 {
+			yield(batch, nil)
 		}
 	}
 }

@@ -13,7 +13,7 @@ func TestPrintRowPlain(t *testing.T) {
 	var buf bytes.Buffer
 	s := stream.Of(coll.Collection{
 		Name: "users",
-		Rows: coll.SliceRows([]coll.Row{{
+		Rows: coll.SliceRowBatches([]coll.Row{{
 			"name": "alice",
 			"id":   float64(1),
 			"ok":   true,

@@ -2,7 +2,6 @@ package pg
 
 import (
 	"context"
-	"iter"
 	"time"
 
 	"github.com/ceymard/swl-go/internal/coll"
@@ -72,8 +71,8 @@ func streamQueries(ctx context.Context, cfg handlers.Config, pool interface {
 
 func queryRows(ctx context.Context, pool interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
-}, query string) iter.Seq2[coll.Row, error] {
-	return func(yield func(coll.Row, error) bool) {
+}, query string) coll.RowBatches {
+	return func(yield func([]coll.Row, error) bool) {
 		rows, err := pool.Query(ctx, query)
 		if err != nil {
 			yield(nil, errs.Wrap(err, "postgres query"))
@@ -81,6 +80,7 @@ func queryRows(ctx context.Context, pool interface {
 		}
 		defer rows.Close()
 
+		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		for rows.Next() {
 			raw, err := pgx.RowToMap(rows)
 			if err != nil {
@@ -91,12 +91,20 @@ func queryRows(ctx context.Context, pool interface {
 			for k, v := range raw {
 				row[k] = normalizePGCell(v)
 			}
-			if !yield(row, nil) {
-				return
+			batch = append(batch, row)
+			if len(batch) == coll.DefaultBatchSize {
+				if !yield(batch, nil) {
+					return
+				}
+				batch = make([]coll.Row, 0, coll.DefaultBatchSize)
 			}
 		}
 		if err := rows.Err(); err != nil {
 			yield(nil, errs.Wrap(err, "postgres rows"))
+			return
+		}
+		if len(batch) > 0 {
+			yield(batch, nil)
 		}
 	}
 }

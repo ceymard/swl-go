@@ -354,11 +354,11 @@ func runSourceErr(path string, opts xlsx.SrcOpts) ([]swltest.Snapshot, error) {
 			return nil, err
 		}
 		snap := swltest.Snapshot{Name: c.Name}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				return nil, err
 			}
-			snap.Rows = append(snap.Rows, row)
+			snap.Rows = append(snap.Rows, batch...)
 		}
 		snaps = append(snaps, snap)
 	}

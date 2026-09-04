@@ -99,14 +99,14 @@ func Track(log *msg.Log, role Role, in coll.Stream) coll.Stream {
 				continue
 			}
 			tr.begin(c.Name)
-			rows := func(yieldRow func(coll.Row, error) bool) {
-				for row, err := range c.Rows {
+			rows := func(yieldBatch func([]coll.Row, error) bool) {
+				for batch, err := range c.Rows {
 					if err != nil {
-						yieldRow(row, err)
+						yieldBatch(batch, err)
 						return
 					}
-					tr.add(1)
-					if !yieldRow(row, nil) {
+					tr.add(int64(len(batch)))
+					if !yieldBatch(batch, nil) {
 						return
 					}
 				}

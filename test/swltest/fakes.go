@@ -41,11 +41,11 @@ func (c RowCollectSink) Sink(ctx context.Context, cfg handlers.Config, in coll.S
 		if err != nil {
 			return err
 		}
-		for row, err := range col.Rows {
+		for batch, err := range col.Rows {
 			if err != nil {
 				return err
 			}
-			*c.Rows = append(*c.Rows, row)
+			*c.Rows = append(*c.Rows, batch...)
 		}
 	}
 	return nil

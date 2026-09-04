@@ -56,7 +56,7 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 			}
 			c := coll.Collection{
 				Name: emitName,
-				Rows: coll.SliceRows(rows),
+				Rows: coll.SliceRowBatches(rows),
 			}
 			if !yield(c, nil) {
 				return

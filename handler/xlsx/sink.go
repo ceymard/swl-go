@@ -3,7 +3,6 @@ package xlsx
 import (
 	"context"
 	"fmt"
-	"iter"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,13 +59,15 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 	return nil
 }
 
-func collectSinkRows(rows iter.Seq2[coll.Row, error]) ([]coll.Row, error) {
+func collectSinkRows(rows coll.RowBatches) ([]coll.Row, error) {
 	var out []coll.Row
-	for row, err := range rows {
+	for batch, err := range rows {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, normalizeSinkRow(row))
+		for _, row := range batch {
+			out = append(out, normalizeSinkRow(row))
+		}
 	}
 	return out, nil
 }

@@ -137,8 +137,8 @@ func TestJSONToDuckDB(t *testing.T) {
 func TestSinkSchemaTable(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.duckdb")
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldRow func(coll.Row, error) bool) {
-			yieldRow(coll.Row{"id": int64(1), "name": "alice"}, nil)
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			yieldBatch([]coll.Row{{"id": int64(1), "name": "alice"}}, nil)
 		}
 		yield(coll.Collection{Name: "analytics.users", Rows: rows}, nil)
 	}

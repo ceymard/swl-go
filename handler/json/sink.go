@@ -117,22 +117,24 @@ func writeCollection(w io.Writer, c coll.Collection, objectMode, prefixComma boo
 	}
 
 	first := true
-	for row, err := range c.Rows {
+	for batch, err := range c.Rows {
 		if err != nil {
 			return err
 		}
-		if !first {
-		if _, err := io.WriteString(w, ",\n"); err != nil {
-			return err
-		}
-		}
-		first = false
-		b, err := jsonx.Marshal(row)
-		if err != nil {
-			return errs.Wrap(err, "marshal json row", "collection", c.Name)
-		}
-		if _, err := w.Write(b); err != nil {
-			return err
+		for _, row := range batch {
+			if !first {
+				if _, err := io.WriteString(w, ",\n"); err != nil {
+					return err
+				}
+			}
+			first = false
+			b, err := jsonx.Marshal(row)
+			if err != nil {
+				return errs.Wrap(err, "marshal json row", "collection", c.Name)
+			}
+			if _, err := w.Write(b); err != nil {
+				return err
+			}
 		}
 	}
 	_, err := io.WriteString(w, "\n]\n")

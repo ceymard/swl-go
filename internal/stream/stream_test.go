@@ -8,8 +8,8 @@ import (
 )
 
 func TestConcatOrder(t *testing.T) {
-	a := stream.Of(coll.Collection{Name: "a", Rows: coll.SliceRows([]coll.Row{{"x": 1}})})
-	b := stream.Of(coll.Collection{Name: "b", Rows: coll.SliceRows([]coll.Row{{"y": 2}})})
+	a := stream.Of(coll.Collection{Name: "a", Rows: coll.SliceRowBatches([]coll.Row{{"x": 1}})})
+	b := stream.Of(coll.Collection{Name: "b", Rows: coll.SliceRowBatches([]coll.Row{{"y": 2}})})
 	var names []string
 	for c, err := range stream.Concat(a, b) {
 		if err != nil {
@@ -25,7 +25,7 @@ func TestConcatOrder(t *testing.T) {
 func TestMapRows(t *testing.T) {
 	in := stream.Of(coll.Collection{
 		Name: "t",
-		Rows: coll.SliceRows([]coll.Row{{"a": 1}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}}),
 	})
 	out := stream.MapRows(in, func(row coll.Row) (coll.Row, error) {
 		return coll.Row{"b": row["a"]}, nil
@@ -34,12 +34,14 @@ func TestMapRows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row["b"] != 1 {
-				t.Fatalf("got %v", row)
+			for _, row := range batch {
+				if row["b"] != 1 {
+					t.Fatalf("got %v", row)
+				}
 			}
 		}
 	}
@@ -48,7 +50,7 @@ func TestMapRows(t *testing.T) {
 func TestMapRowsErrorStops(t *testing.T) {
 	in := stream.Of(coll.Collection{
 		Name: "t",
-		Rows: coll.SliceRows([]coll.Row{{"a": 1}, {"a": 2}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}, {"a": 2}}),
 	})
 	sentinel := errSentinel{}
 	out := stream.MapRows(in, func(row coll.Row) (coll.Row, error) {

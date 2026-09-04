@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 func TestFlattenPipeline(t *testing.T) {
 	src := swltest.MemSource{Collections: []coll.Collection{{
 		Name: "users",
-		Rows: coll.SliceRows([]coll.Row{{"user": map[string]any{"name": "Ann"}}}),
+		Rows: coll.SliceRowBatches([]coll.Row{{"user": map[string]any{"name": "Ann"}}}),
 	}}}
 	handler.Register(swltest.MemSrcID, src, handler.Meta{})
 

@@ -56,11 +56,11 @@ func TestSourceMergeArchiveShards(t *testing.T) {
 			t.Fatal(err)
 		}
 		snap := collRowSnap{Name: c.Name}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				t.Fatal(err)
 			}
-			snap.Rows = append(snap.Rows, row)
+			snap.Rows = append(snap.Rows, batch...)
 		}
 		snaps = append(snaps, snap)
 	}
@@ -85,15 +85,17 @@ func TestSourceColumnProjection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := row["extra"]; ok {
-				t.Fatalf("extra column present: %+v", row)
-			}
-			if row["name"] != "alice" {
-				t.Fatalf("row %+v", row)
+			for _, row := range batch {
+				if _, ok := row["extra"]; ok {
+					t.Fatalf("extra column present: %+v", row)
+				}
+				if row["name"] != "alice" {
+					t.Fatalf("row %+v", row)
+				}
 			}
 		}
 	}
@@ -104,7 +106,7 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 	out := filepath.Join(dir, "people.parquet")
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := coll.SliceRows([]coll.Row{
+		rows := coll.SliceRowBatches([]coll.Row{
 			{"id": int64(1), "name": "alice"},
 			{"id": int64(2), "name": "bob"},
 		})
@@ -126,11 +128,11 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 			t.Fatal(err)
 		}
 		n := 0
-		for _, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				t.Fatal(err)
 			}
-			n++
+			n += len(batch)
 		}
 		if n != 2 {
 			t.Fatalf("rows %d", n)
@@ -142,7 +144,7 @@ func TestSinkDirectoryLayout(t *testing.T) {
 	dir := t.TempDir()
 	outDir := filepath.Join(dir, "out")
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: "users", Rows: coll.SliceRows([]coll.Row{{"id": int64(1)}})}, nil)
+		yield(coll.Collection{Name: "users", Rows: coll.SliceRowBatches([]coll.Row{{"id": int64(1)}})}, nil)
 	}
 	sink := parquet.Sink{}
 	opts, _ := parquet.ParseSinkOptions(outDir, nil)

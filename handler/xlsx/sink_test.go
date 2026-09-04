@@ -51,7 +51,7 @@ func TestSinkWriteAndReadBack(t *testing.T) {
 	out := filepath.Join(dir, "out.xlsx")
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := coll.SliceRows([]coll.Row{
+		rows := coll.SliceRowBatches([]coll.Row{
 			{"id": int64(1), "name": "alice"},
 			{"id": int64(2), "name": "bob"},
 		})
@@ -115,7 +115,7 @@ func TestSinkNormalizesObjectsAndDates(t *testing.T) {
 	when := time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC)
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := coll.SliceRows([]coll.Row{{
+		rows := coll.SliceRowBatches([]coll.Row{{
 			"when": when,
 			"meta": map[string]any{"k": "v"},
 		}})
@@ -144,7 +144,7 @@ func TestSinkNormalizesObjectsAndDates(t *testing.T) {
 
 func TestSinkRejectsXLSBOutput(t *testing.T) {
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: "x", Rows: coll.SliceRows([]coll.Row{{"a": 1}})}, nil)
+		yield(coll.Collection{Name: "x", Rows: coll.SliceRowBatches([]coll.Row{{"a": 1}})}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, _ := xlsx.ParseSinkOptions("out.xlsb", nil)
@@ -157,7 +157,7 @@ func TestSinkEmptyCollection(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.xlsx")
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: "empty", Rows: coll.SliceRows(nil)}, nil)
+		yield(coll.Collection{Name: "empty", Rows: coll.SliceRowBatches(nil)}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, _ := xlsx.ParseSinkOptions(out, nil)
@@ -177,7 +177,7 @@ func TestSinkEmptyCollection(t *testing.T) {
 func writeSink(t *testing.T, path, sheet string, rows []coll.Row) {
 	t.Helper()
 	stream := func(yield func(coll.Collection, error) bool) {
-		yield(coll.Collection{Name: sheet, Rows: coll.SliceRows(rows)}, nil)
+		yield(coll.Collection{Name: sheet, Rows: coll.SliceRowBatches(rows)}, nil)
 	}
 	sink := xlsx.Sink{}
 	opts, err := xlsx.ParseSinkOptions(path, nil)

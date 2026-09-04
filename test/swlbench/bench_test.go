@@ -12,6 +12,7 @@ import (
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/handlers"
 	"github.com/ceymard/swl-go/internal/jsonx"
+	"github.com/ceymard/swl-go/internal/progress"
 	"github.com/ceymard/swl-go/internal/stream"
 )
 
@@ -85,7 +86,7 @@ func BenchmarkSQLiteInsert50k(b *testing.B) {
 		path := filepath.Join(b.TempDir(), "bench.db")
 		b.StartTimer()
 
-		s := stream.Of(coll.Collection{Name: "users", Rows: coll.SliceRows(benchRows)})
+		s := stream.Of(coll.Collection{Name: "users", Rows: coll.SliceRowBatches(benchRows)})
 		opts, _ := sqlite.ParseSinkOptions(path, nil)
 		if err := (sqlite.Sink{}).Sink(context.Background(), handlers.Config{Verbose: 0}, s, opts); err != nil {
 			b.Fatal(err)
@@ -111,15 +112,57 @@ func BenchmarkJSONSource50k(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			for _, err := range c.Rows {
+			for batch, err := range c.Rows {
 				if err != nil {
 					b.Fatal(err)
 				}
-				n++
+				n += len(batch)
 			}
 		}
 		if n != len(benchRows) {
 			b.Fatalf("rows %d", n)
+		}
+	}
+}
+
+// BenchmarkPipelineJSONFlattenSQLite50k mirrors runner.Run's stage wiring
+// (source -> CheckContext -> progress.Track -> transform -> CheckContext ->
+// progress.Track -> sink) so it exercises the per-row plumbing overhead
+// (context checks, progress counters) that batching targets, unlike
+// BenchmarkJSONSource50k which reads the raw source stream directly.
+func BenchmarkPipelineJSONFlattenSQLite50k(b *testing.B) {
+	if len(benchRows) == 0 {
+		b.Skip("bench fixture missing")
+	}
+	path := filepath.Join("..", "..", "testdata", "json", "bench50k.json")
+	srcOpts, err := jsonh.ParseSrcOptions(path, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		dbPath := filepath.Join(b.TempDir(), "bench.db")
+		sinkOpts, _ := sqlite.ParseSinkOptions(dbPath, nil)
+		b.StartTimer()
+
+		cfg := handlers.Config{Ctx: ctx, Verbose: 0}
+		s, err := jsonh.Source{}.Source(ctx, cfg, srcOpts)
+		if err != nil {
+			b.Fatal(err)
+		}
+		s = progress.Track(cfg.Messages, progress.Source, stream.CheckContext(ctx, s))
+
+		s, err = (flatten.Transform{}).Transform(ctx, cfg, s, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		s = stream.CheckContext(ctx, s)
+
+		s = progress.Track(cfg.Messages, progress.Sink, s)
+		if err := (sqlite.Sink{}).Sink(ctx, cfg, s, sinkOpts); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

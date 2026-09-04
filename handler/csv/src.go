@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/csv"
 	"io"
-	"iter"
 	"os"
 	"sort"
 	"strconv"
@@ -60,22 +59,51 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}, nil
 }
 
-func readFiles(ctx context.Context, opts SrcOpts, files []string) iter.Seq2[coll.Row, error] {
-	return func(yield func(coll.Row, error) bool) {
+func readFiles(ctx context.Context, opts SrcOpts, files []string) coll.RowBatches {
+	return func(yield func([]coll.Row, error) bool) {
+		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
+		stopped := false
+		flush := func() bool {
+			if stopped || len(batch) == 0 {
+				return !stopped
+			}
+			ok := yield(batch, nil)
+			batch = make([]coll.Row, 0, coll.DefaultBatchSize)
+			if !ok {
+				stopped = true
+			}
+			return ok
+		}
+		appendRow := func(row coll.Row) bool {
+			if stopped {
+				return false
+			}
+			batch = append(batch, row)
+			if len(batch) == coll.DefaultBatchSize {
+				return flush()
+			}
+			return true
+		}
 		for _, path := range files {
+			if stopped {
+				return
+			}
 			if err := ctx.Err(); err != nil {
 				yield(nil, err)
 				return
 			}
-			if err := readFile(ctx, opts, path, yield); err != nil {
+			if err := readFile(ctx, opts, path, appendRow); err != nil {
 				yield(nil, err)
 				return
 			}
 		}
+		if !stopped {
+			flush()
+		}
 	}
 }
 
-func readFile(ctx context.Context, opts SrcOpts, path string, yield func(coll.Row, error) bool) error {
+func readFile(ctx context.Context, opts SrcOpts, path string, appendRow func(coll.Row) bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return errs.Wrap(err, "open csv file", "path", path)
@@ -131,7 +159,7 @@ func readFile(ctx context.Context, opts SrcOpts, path string, yield func(coll.Ro
 		applyMerge(row, opts.Merge)
 		applyNumbers(row, opts.Numbers)
 		applyEmpty(row, opts.NoEmpty, opts.EmptyIsNull)
-		if !yield(row, nil) {
+		if !appendRow(row) {
 			return nil
 		}
 	}

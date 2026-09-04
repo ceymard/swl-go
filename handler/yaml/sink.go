@@ -92,22 +92,24 @@ type nopCloser struct{ io.Writer }
 func (nopCloser) Close() error { return nil }
 
 func writeCollection(w io.Writer, c coll.Collection) error {
-	for row, err := range c.Rows {
+	for batch, err := range c.Rows {
 		if err != nil {
 			return err
 		}
-		b, err := jsonx.Marshal(row)
-		if err != nil {
-			return errs.Wrap(err, "marshal yaml row", "collection", c.Name)
-		}
-		if _, err := io.WriteString(w, "- "); err != nil {
-			return err
-		}
-		if _, err := w.Write(b); err != nil {
-			return err
-		}
-		if _, err := io.WriteString(w, "\n"); err != nil {
-			return err
+		for _, row := range batch {
+			b, err := jsonx.Marshal(row)
+			if err != nil {
+				return errs.Wrap(err, "marshal yaml row", "collection", c.Name)
+			}
+			if _, err := io.WriteString(w, "- "); err != nil {
+				return err
+			}
+			if _, err := w.Write(b); err != nil {
+				return err
+			}
+			if _, err := io.WriteString(w, "\n"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

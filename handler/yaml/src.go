@@ -65,7 +65,7 @@ func streamDocument(doc *parsedDoc) coll.Stream {
 
 			c := coll.Collection{
 				Name: name,
-				Rows: coll.SliceRows(rowsToEmit(rows)),
+				Rows: coll.SliceRowBatches(rowsToEmit(rows)),
 			}
 			if !yield(c, nil) {
 				return

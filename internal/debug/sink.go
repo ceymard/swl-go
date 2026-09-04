@@ -30,13 +30,15 @@ func sinkTo(out io.Writer, verbose int, in coll.Stream) error {
 		}
 		current = c.Name
 		n = 0
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				return err
 			}
-			n++
-			if err := printRow(out, current, n, row, colorize); err != nil {
-				return err
+			for _, row := range batch {
+				n++
+				if err := printRow(out, current, n, row, colorize); err != nil {
+					return err
+				}
 			}
 		}
 	}

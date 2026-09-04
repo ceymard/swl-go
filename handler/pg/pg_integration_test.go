@@ -341,12 +341,12 @@ func TestIntegrationSinkTextualJSONCoercion(t *testing.T) {
 	)`)
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldRow func(coll.Row, error) bool) {
-			yieldRow(coll.Row{
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			yieldBatch([]coll.Row{{
 				"id":      "42",
 				"note":    "hello",
 				"payload": `{"nested":{"ok":true,"labels":["x","y"]}}`,
-			}, nil)
+			}}, nil)
 		}
 		yield(coll.Collection{Name: "typed_rows", Rows: rows}, nil)
 	}
@@ -490,7 +490,7 @@ func snapshotsToStream(snaps []swltest.Snapshot) coll.Stream {
 			rows := append([]coll.Row(nil), s.Rows...)
 			c := coll.Collection{
 				Name: s.Name,
-				Rows: coll.SliceRows(rows),
+				Rows: coll.SliceRowBatches(rows),
 			}
 			if !yield(c, nil) {
 				return

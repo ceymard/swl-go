@@ -14,12 +14,9 @@ func TestTrackFinalRowCount(t *testing.T) {
 	log := &msg.Log{Out: &buf, Verbose: 2}
 
 	in := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldRow func(coll.Row, error) bool) {
-			for i := 0; i < 3; i++ {
-				if !yieldRow(coll.Row{"id": i}, nil) {
-					return
-				}
-			}
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			batch := []coll.Row{{"id": 0}, {"id": 1}, {"id": 2}}
+			yieldBatch(batch, nil)
 		}
 		yield(coll.Collection{Name: "users", Rows: rows}, nil)
 	}
@@ -28,11 +25,11 @@ func TestTrackFinalRowCount(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for row, err := range c.Rows {
+		for batch, err := range c.Rows {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_ = row
+			_ = batch
 		}
 	}
 

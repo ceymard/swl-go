@@ -3,7 +3,6 @@ package parquet
 import (
 	"context"
 	"io"
-	"iter"
 	"os"
 	"sort"
 
@@ -63,18 +62,32 @@ func (Source) Source(ctx context.Context, cfg handlers.Config, raw any) (coll.St
 	}, nil
 }
 
-func readSelections(ctx context.Context, files []FileSelection) iter.Seq2[coll.Row, error] {
-	return func(yield func(coll.Row, error) bool) {
+func readSelections(ctx context.Context, files []FileSelection) coll.RowBatches {
+	return func(yield func([]coll.Row, error) bool) {
+		stopped := false
+		guardedYield := func(batch []coll.Row, err error) bool {
+			if stopped {
+				return false
+			}
+			if !yield(batch, err) {
+				stopped = true
+				return false
+			}
+			return true
+		}
 		for _, sel := range files {
-			if err := readFile(ctx, sel, yield); err != nil {
-				yield(nil, err)
+			if stopped {
+				return
+			}
+			if err := readFile(ctx, sel, guardedYield); err != nil {
+				guardedYield(nil, err)
 				return
 			}
 		}
 	}
 }
 
-func readFile(ctx context.Context, sel FileSelection, yield func(coll.Row, error) bool) error {
+func readFile(ctx context.Context, sel FileSelection, yield func([]coll.Row, error) bool) error {
 	f, err := os.Open(sel.File)
 	if err != nil {
 		return errs.Wrap(err, "open parquet file", "path", sel.File)
@@ -102,11 +115,12 @@ func readFile(ctx context.Context, sel FileSelection, yield func(coll.Row, error
 		}
 		n, err := reader.Read(buf)
 		if n > 0 {
+			batch := make([]coll.Row, n)
 			for i := 0; i < n; i++ {
-				row := projectRow(anyToRow(buf[i]), cols)
-				if !yield(row, nil) {
-					return nil
-				}
+				batch[i] = projectRow(anyToRow(buf[i]), cols)
+			}
+			if !yield(batch, nil) {
+				return nil
 			}
 		}
 		if err != nil {

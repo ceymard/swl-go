@@ -248,14 +248,14 @@ func TestIntegrationSinkAutoCreateJSON(t *testing.T) {
 	defer cancel()
 
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldRow func(coll.Row, error) bool) {
-			yieldRow(coll.Row{
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			yieldBatch([]coll.Row{{
 				"id":   int64(1),
 				"tags": []any{"alpha", "beta"},
 				"payload": map[string]any{
 					"meta": map[string]any{"nested": map[string]any{"ok": true}},
 				},
-			}, nil)
+			}}, nil)
 		}
 		yield(coll.Collection{Name: "dbo.created_docs", Rows: rows}, nil)
 	}
@@ -286,7 +286,7 @@ func snapshotsToStream(snaps []swltest.Snapshot) coll.Stream {
 			rows := append([]coll.Row(nil), s.Rows...)
 			c := coll.Collection{
 				Name: s.Name,
-				Rows: coll.SliceRows(rows),
+				Rows: coll.SliceRowBatches(rows),
 			}
 			if !yield(c, nil) {
 				return

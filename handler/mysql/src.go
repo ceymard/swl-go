@@ -3,7 +3,6 @@ package mysql
 import (
 	"context"
 	"database/sql"
-	"iter"
 
 	"github.com/ceymard/swl-go/internal/coll"
 	"github.com/ceymard/swl-go/internal/errs"
@@ -85,8 +84,8 @@ func streamTables(ctx context.Context, cfg handlers.Config, db *sql.DB, tun *ssh
 	}
 }
 
-func queryRows(ctx context.Context, db *sql.DB, query string) iter.Seq2[coll.Row, error] {
-	return func(yield func(coll.Row, error) bool) {
+func queryRows(ctx context.Context, db *sql.DB, query string) coll.RowBatches {
+	return func(yield func([]coll.Row, error) bool) {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
 			yield(nil, errs.Wrap(err, "mysql query"))
@@ -100,6 +99,7 @@ func queryRows(ctx context.Context, db *sql.DB, query string) iter.Seq2[coll.Row
 			return
 		}
 
+		batch := make([]coll.Row, 0, coll.DefaultBatchSize)
 		for rows.Next() {
 			raw := make([]any, len(cols))
 			ptrs := make([]any, len(cols))
@@ -114,12 +114,20 @@ func queryRows(ctx context.Context, db *sql.DB, query string) iter.Seq2[coll.Row
 			for i, name := range cols {
 				row[name] = normalizeCell(raw[i])
 			}
-			if !yield(row, nil) {
-				return
+			batch = append(batch, row)
+			if len(batch) == coll.DefaultBatchSize {
+				if !yield(batch, nil) {
+					return
+				}
+				batch = make([]coll.Row, 0, coll.DefaultBatchSize)
 			}
 		}
 		if err := rows.Err(); err != nil {
 			yield(nil, errs.Wrap(err, "mysql rows"))
+			return
+		}
+		if len(batch) > 0 {
+			yield(batch, nil)
 		}
 	}
 }

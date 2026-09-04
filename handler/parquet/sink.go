@@ -3,7 +3,6 @@ package parquet
 import (
 	"context"
 	"encoding/json"
-	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,13 +58,15 @@ func (Sink) Sink(ctx context.Context, cfg handlers.Config, in coll.Stream, raw a
 	return nil
 }
 
-func collectRows(rows iter.Seq2[coll.Row, error]) ([]map[string]any, error) {
+func collectRows(rows coll.RowBatches) ([]map[string]any, error) {
 	var out []map[string]any
-	for row, err := range rows {
+	for batch, err := range rows {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, normalizeRow(row))
+		for _, row := range batch {
+			out = append(out, normalizeRow(row))
+		}
 	}
 	return out, nil
 }

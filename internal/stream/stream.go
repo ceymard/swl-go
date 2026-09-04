@@ -17,12 +17,20 @@ func Empty() coll.Stream {
 func Concat(a, b coll.Stream) coll.Stream {
 	return func(yield func(coll.Collection, error) bool) {
 		for c, err := range a {
-			if err != nil || !yield(c, err) {
+			if err != nil {
+				yield(c, err)
+				return
+			}
+			if !yield(c, nil) {
 				return
 			}
 		}
 		for c, err := range b {
-			if err != nil || !yield(c, err) {
+			if err != nil {
+				yield(c, err)
+				return
+			}
+			if !yield(c, nil) {
 				return
 			}
 		}
@@ -52,18 +60,22 @@ func MapRows(in coll.Stream, fn func(coll.Row) (coll.Row, error)) coll.Stream {
 			out := coll.Collection{
 				Name:    c.Name,
 				Columns: c.Columns,
-				Rows: func(yield func(coll.Row, error) bool) {
-					for row, err := range c.Rows {
+				Rows: func(yield func([]coll.Row, error) bool) {
+					for batch, err := range c.Rows {
 						if err != nil {
 							yield(nil, err)
 							return
 						}
-						nr, err := fn(row)
-						if err != nil {
-							yield(nil, err)
-							return
+						nb := make([]coll.Row, len(batch))
+						for i, row := range batch {
+							nr, err := fn(row)
+							if err != nil {
+								yield(nil, err)
+								return
+							}
+							nb[i] = nr
 						}
-						if !yield(nr, nil) {
+						if !yield(nb, nil) {
 							return
 						}
 					}
@@ -88,19 +100,21 @@ func TeeRows(in coll.Stream, side func(coll.Collection, coll.Row) error) coll.St
 			out := coll.Collection{
 				Name:    c.Name,
 				Columns: c.Columns,
-				Rows: func(yield func(coll.Row, error) bool) {
-					for row, err := range c.Rows {
+				Rows: func(yield func([]coll.Row, error) bool) {
+					for batch, err := range c.Rows {
 						if err != nil {
 							yield(nil, err)
 							return
 						}
 						if side != nil {
-							if err := side(c, row); err != nil {
-								yield(nil, err)
-								return
+							for _, row := range batch {
+								if err := side(c, row); err != nil {
+									yield(nil, err)
+									return
+								}
 							}
 						}
-						if !yield(row, nil) {
+						if !yield(batch, nil) {
 							return
 						}
 					}
@@ -131,8 +145,8 @@ func CheckContext(ctx context.Context, in coll.Stream) coll.Stream {
 			out := coll.Collection{
 				Name:    c.Name,
 				Columns: c.Columns,
-				Rows: func(yield func(coll.Row, error) bool) {
-					for row, err := range c.Rows {
+				Rows: func(yield func([]coll.Row, error) bool) {
+					for batch, err := range c.Rows {
 						if err := ctx.Err(); err != nil {
 							yield(nil, err)
 							return
@@ -141,7 +155,7 @@ func CheckContext(ctx context.Context, in coll.Stream) coll.Stream {
 							yield(nil, err)
 							return
 						}
-						if !yield(row, nil) {
+						if !yield(batch, nil) {
 							return
 						}
 					}

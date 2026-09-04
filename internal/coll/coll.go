@@ -13,22 +13,33 @@ import (
 // Row is one record. Sources typically emit map[string]any; sinks infer schema from keys.
 type Row = map[string]any
 
+// DefaultBatchSize is how many rows sources/transforms accumulate per yield.
+// Batching amortizes per-yield overhead (context checks, progress counters)
+// across many rows instead of paying it once per row.
+const DefaultBatchSize = 1024
+
+// RowBatches is the row-level iterator: each yield delivers up to
+// DefaultBatchSize rows instead of one.
+type RowBatches = iter.Seq2[[]Row, error]
+
 // Collection is a named set of rows. Name becomes table name / file stem / JSON key.
 // Columns are optional type hints (from DB DESCRIBE etc.); nil means infer from first row.
 type Collection struct {
 	Name    string
 	Columns []schema.Column
-	Rows    iter.Seq2[Row, error]
+	Rows    RowBatches
 }
 
 // Stream yields collections in order. Chained sources (++ ) concatenate streams.
 type Stream = iter.Seq2[Collection, error]
 
-// SliceRows wraps an in-memory slice as a row iterator (json source, tests).
-func SliceRows(rows []Row) iter.Seq2[Row, error] {
-	return func(yield func(Row, error) bool) {
-		for _, row := range rows {
-			if !yield(row, nil) {
+// SliceRowBatches wraps an in-memory slice as a chunked batch iterator
+// (json source, tests).
+func SliceRowBatches(rows []Row) RowBatches {
+	return func(yield func([]Row, error) bool) {
+		for i := 0; i < len(rows); i += DefaultBatchSize {
+			end := min(i+DefaultBatchSize, len(rows))
+			if !yield(rows[i:end], nil) {
 				return // consumer stopped early
 			}
 		}

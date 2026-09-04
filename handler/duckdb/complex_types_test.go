@@ -191,8 +191,8 @@ func TestSourceJSONColumnWithNestedData(t *testing.T) {
 func TestSinkJSONColumnRoundTrip(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "out.duckdb")
 	stream := func(yield func(coll.Collection, error) bool) {
-		rows := func(yieldRow func(coll.Row, error) bool) {
-			yieldRow(coll.Row{
+		rows := func(yieldBatch func([]coll.Row, error) bool) {
+			yieldBatch([]coll.Row{{
 				"id": int64(1),
 				"payload": map[string]any{
 					"users": []any{
@@ -203,7 +203,7 @@ func TestSinkJSONColumnRoundTrip(t *testing.T) {
 						"nested": map[string]any{"ok": true},
 					},
 				},
-			}, nil)
+			}}, nil)
 		}
 		yield(coll.Collection{Name: "docs", Rows: rows}, nil)
 	}
