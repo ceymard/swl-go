@@ -36,6 +36,7 @@ type sinkHooks struct {
 	tx   pgx.Tx
 	seen map[string]bool
 	seq  atomic.Uint64
+	cur  *copyWriter // collection currently being copied, aborted on rollback
 }
 
 func (h *sinkHooks) Init(ctx context.Context) error {
@@ -172,10 +173,17 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		<-copyDone
 		return nil, err
 	}
+	h.cur = w
 	return w, nil
 }
 
 func (h *sinkHooks) Rollback(ctx context.Context) {
+	// An in-flight COPY must be ended before touching the connection: closing it
+	// mid-COPY makes pgx panic and hides the original error.
+	if h.cur != nil {
+		h.cur.abort()
+		h.cur = nil
+	}
 	if h.tx != nil {
 		_ = h.tx.Rollback(ctx)
 	}
@@ -275,6 +283,16 @@ func (w *copyWriter) Close() error {
 	return nil
 }
 
+// abort fails the running COPY and waits for it to finish.
+func (w *copyWriter) abort() {
+	if w.closed || w.pw == nil {
+		return
+	}
+	w.closed = true
+	_ = w.pw.CloseWithError(errs.New("aborted"))
+	<-w.copyDone
+}
+
 func (w *copyWriter) writeRow(row coll.Row) error {
 	row = transformHstoreColumns(row, w.cols, w.hstoreCols)
 	payload, err := copyLine(w.cols, row)
@@ -304,7 +322,7 @@ func copyLine(cols []string, row coll.Row) ([]byte, error) {
 		buf.WriteByte(':')
 		val, err := jsonx.Marshal(row.Cell(i))
 		if err != nil {
-			return nil, err
+			return nil, errs.Wrapf(err, "encode column %q", c)
 		}
 		buf.Write(val)
 	}

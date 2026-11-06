@@ -31,21 +31,23 @@ func ConsumeHooks(cfg Config, hooks SinkHooks, in coll.Stream) (err error) {
 		}
 		var w RowWriter
 		var opened bool
+		nrow := 0
 		for batch, err := range c.Rows {
 			if err != nil {
 				return errs.Wrap(err, "read row", "collection", c.Name)
 			}
 			for _, row := range batch {
+				nrow++
 				if !opened {
 					w, err = hooks.Open(cfg.Ctx, c, row)
 					if err != nil {
-						return errs.Wrap(err, "open collection", "collection", c.Name)
+						return errs.Wrapf(err, "open collection %s (row %d)", c.Name, nrow)
 					}
 					opened = true
 					continue // first row consumed by Open
 				}
 				if err = w.Write(row); err != nil {
-					return errs.Wrap(err, "write row", "collection", c.Name)
+					return errs.Wrapf(err, "write row %d of %s (data row, excluding header)", nrow, c.Name)
 				}
 			}
 		}
