@@ -116,7 +116,7 @@ func SigilBoth(s string, on bool) string {
 	if !on {
 		return s
 	}
-	return color.New(color.FgHiMagenta).Sprint(s)
+	return color.New(color.FgHiBlue).Sprint(s)
 }
 
 func SigilSource(s string, on bool) string {
@@ -130,7 +130,7 @@ func SigilSink(s string, on bool) string {
 	if !on {
 		return s
 	}
-	return color.New(color.FgHiRed).Sprint(s)
+	return color.New(color.FgHiMagenta).Sprint(s)
 }
 
 func HandlerName(s string, on bool) string {

@@ -5,13 +5,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
-	_ "github.com/ceymard/swl-go/handler" // side-effect: register all handlers
 	"github.com/ceymard/swl-go/handler"
+	_ "github.com/ceymard/swl-go/handler" // side-effect: register all handlers
 	"github.com/ceymard/swl-go/internal/errs"
 	"github.com/ceymard/swl-go/internal/msg"
 	"github.com/ceymard/swl-go/internal/pipeline"
@@ -23,6 +25,7 @@ import (
 type globalCLI struct {
 	Quiet    bool     `help:"Suppress progress output"`
 	Verbose  int      `short:"v" type:"counter" help:"Increase verbosity"`
+	Trace    bool     `help:"Print the stack trace on error (or set SWL_TRACE=1)"`
 	Help     bool     `short:"h" help:"Show help"`
 	Pipeline []string `arg:"" optional:"" passthrough:"all"` // everything after flags
 }
@@ -51,7 +54,7 @@ func main() {
 	// swl2: empty pipeline prints available handlers/extensions/protocols.
 	if len(cli.Pipeline) == 0 {
 		c := style.Enabled(os.Stderr)
-		fmt.Fprintln(os.Stderr, style.Error("error:", c), "a command may not be empty")
+		printError(errors.New("a command may not be empty"), false)
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, style.Dim("  list of available sources/sinks :", c))
 		fmt.Fprintln(os.Stderr)
@@ -69,12 +72,11 @@ func main() {
 		fmt.Sscanf(v, "%d", &verbose)
 	}
 
+	trace := cli.Trace || os.Getenv("SWL_TRACE") != ""
+
 	p, err := pipeline.Parse(cli.Pipeline, verbose)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		if st := errs.Stacktrace(err); st != "" && verbose >= 1 {
-			fmt.Fprintln(os.Stderr, st)
-		}
+		printError(err, trace)
 		os.Exit(1)
 	}
 
@@ -83,11 +85,27 @@ func main() {
 		Verbose:  verbose,
 	}
 
-	if err := runner.Run(cfg, handler.Reg, p); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		if st := errs.Stacktrace(err); st != "" && verbose >= 1 {
+	start := time.Now()
+	err = runner.Run(cfg, handler.Reg, p)
+	cfg.Messages.Log(1, "done in", msg.FormatDuration(time.Since(start)))
+	if err != nil {
+		printError(err, trace)
+		os.Exit(1)
+	}
+}
+
+// printError writes err to stderr: bold red "ERR" before the first line,
+// continuation lines indented under it, and the stack trace only if asked.
+func printError(err error, trace bool) {
+	c := style.Enabled(os.Stderr)
+	lines := strings.Split(strings.TrimRight(err.Error(), "\n"), "\n")
+	fmt.Fprintln(os.Stderr, style.Error("ERR", c), lines[0])
+	for _, l := range lines[1:] {
+		fmt.Fprintln(os.Stderr, "    ", l)
+	}
+	if trace {
+		if st := errs.Stacktrace(err); st != "" {
 			fmt.Fprintln(os.Stderr, st)
 		}
-		os.Exit(1)
 	}
 }

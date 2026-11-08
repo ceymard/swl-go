@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // Log writes handler progress and diagnostics when Verbose is high enough.
@@ -35,4 +36,18 @@ func (l *Log) Log(level int, args ...any) {
 		return
 	}
 	fmt.Fprintln(l.Out, args...)
+}
+
+// FormatDuration renders d as "NNNms" under a second, "SsMMMms" under a minute,
+// and "MmSsMMMms" beyond.
+func FormatDuration(d time.Duration) string {
+	ms := d.Milliseconds()
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%dms", ms)
+	case ms < 60_000:
+		return fmt.Sprintf("%ds%dms", ms/1000, ms%1000)
+	default:
+		return fmt.Sprintf("%dm%ds%dms", ms/60_000, ms/1000%60, ms%1000)
+	}
 }
