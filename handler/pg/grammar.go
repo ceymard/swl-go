@@ -1,6 +1,9 @@
 package pg
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/ceymard/swl-go/internal/cli"
 	"github.com/ceymard/swl-go/internal/optparse"
 )
@@ -69,6 +72,9 @@ type SinkOpts struct {
 	Notice            bool
 	IgnoreNonExisting bool
 	DropIndexes       bool
+	NoCheck           bool
+	MaxRejects        int   // detailed invalid-row lines per table; 0 = unlimited
+	MaxKeyMemMB       int64 // memory for duplicate-key tracking; 0 = unlimited
 	Collections       map[string]colSinkOpts
 	cli.BaseOpts
 }
@@ -105,6 +111,9 @@ var sinkParser = optparse.Optparser(
 	optparse.Flag("-n", "--notice").As("notice").Help("Show NOTICE messages"),
 	optparse.Flag("-y", "--notify").As("notify").Help("Show LISTEN/NOTIFY traffic"),
 	optparse.Param("-s", "--schema").As("schema").Default("public").Help("Default schema for collections"),
+	optparse.Flag("--no-check").As("no_check").Help("Do not validate rows against the table before loading"),
+	optparse.Param("--max-rejects").As("max_rejects").Default("100").Help("Invalid rows to detail per table (0 = all)"),
+	optparse.Param("--max-key-memory").As("max_key_memory").Default("512").Help("MB of memory for duplicate-key detection (0 = unlimited)"),
 	optparse.Flag("--ignore-non-existing").As("ignore_nonexisting").Help("Skip collections whose table does not exist"),
 ).Include(optparse.DefaultOpts).Include(colSinkOptsParser).AddHandler(
 	optparse.Oneof(colSinkParser).As("collections").Repeat().Help("Per-collection sink options"),
@@ -116,7 +125,18 @@ func ParseSinkOptions(target string, tail []string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	maxRejects, err := atoiOpt(m, "max_rejects", "--max-rejects")
+	if err != nil {
+		return nil, err
+	}
+	keyMB, err := atoiOpt(m, "max_key_memory", "--max-key-memory")
+	if err != nil {
+		return nil, err
+	}
 	opts := SinkOpts{
+		NoCheck:           optparse.Bool(m, "no_check"),
+		MaxRejects:        maxRejects,
+		MaxKeyMemMB:       int64(keyMB),
 		URI:               optparse.Str(m, "uri"),
 		Schema:            optparse.Str(m, "schema"),
 		AutoCreate:        optparse.Bool(m, "auto_create"),
@@ -162,4 +182,12 @@ func ParseSinkOptions(target string, tail []string) (any, error) {
 		opts.Collections[name] = c
 	}
 	return opts, nil
+}
+
+func atoiOpt(m map[string]any, key, flag string) (int, error) {
+	n, err := strconv.Atoi(optparse.Str(m, key))
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s expects a non-negative integer, got %q", flag, optparse.Str(m, key))
+	}
+	return n, nil
 }

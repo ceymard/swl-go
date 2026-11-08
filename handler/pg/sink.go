@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -37,6 +38,20 @@ type sinkHooks struct {
 	seen map[string]bool
 	seq  atomic.Uint64
 	cur  *copyWriter // collection currently being copied, aborted on rollback
+
+	done         bool // Rollback ran: pool and tunnel are already closed
+	failedTables []string
+	rejectedRows int64
+}
+
+// report prints a validation finding. Rejects are the point of the check, so
+// they bypass the verbosity level.
+func (h *sinkHooks) report(line string) {
+	if h.cfg.Messages != nil || h.cfg.Progress != nil {
+		h.cfg.Log(0, line)
+		return
+	}
+	fmt.Fprintln(os.Stderr, line)
 }
 
 func (h *sinkHooks) Init(ctx context.Context) error {
@@ -123,6 +138,38 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		}
 	}
 
+	var validator *tableValidator
+	if !h.opts.NoCheck {
+		meta, err := introspectTable(ctx, h.tx, fqTable)
+		if err != nil {
+			return nil, err
+		}
+		if meta != nil {
+			validator = newTableValidator(col.Name, meta, columnNames(col), col.Columns, validatorOpts{
+				maxRejects: h.opts.MaxRejects,
+				keyLimit:   h.opts.MaxKeyMemMB << 20,
+				insertMode: !effective.Update,
+				checkDups:  !effective.DoNothing && !effective.Update,
+				emit:       h.report,
+			})
+			for _, e := range validator.tableErrs {
+				h.report(col.Name + ": " + e)
+			}
+		}
+	}
+
+	if validator != nil && (h.failed() || len(validator.tableErrs) > 0) {
+		// Nothing will be committed: keep validating, stop talking to Postgres.
+		w := &copyWriter{table: col.Name, v: validator, h: h, failed: true}
+		if len(validator.tableErrs) > 0 {
+			h.failedTables = append(h.failedTables, col.Name)
+		}
+		if err := w.writeRow(firstRow); err != nil {
+			return nil, err
+		}
+		return w, nil
+	}
+
 	hstoreCols, err := listHstoreColumns(ctx, h.tx, schema, table)
 	if err != nil {
 		return nil, err
@@ -167,6 +214,8 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 		droppedIndexes: droppedIndexes,
 		pw:             pw,
 		copyDone:       copyDone,
+		v:              validator,
+		h:              h,
 	}
 	if err := w.writeRow(firstRow); err != nil {
 		_ = pw.Close()
@@ -177,7 +226,10 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 	return w, nil
 }
 
+func (h *sinkHooks) failed() bool { return len(h.failedTables) > 0 }
+
 func (h *sinkHooks) Rollback(ctx context.Context) {
+	h.done = true
 	// An in-flight COPY must be ended before touching the connection: closing it
 	// mid-COPY makes pgx panic and hides the original error.
 	if h.cur != nil {
@@ -199,6 +251,14 @@ func (h *sinkHooks) Rollback(ctx context.Context) {
 }
 
 func (h *sinkHooks) Finish(ctx context.Context) error {
+	if h.done {
+		return nil
+	}
+	if h.failed() {
+		h.Rollback(ctx)
+		return errs.New(fmt.Sprintf("validation failed for %s (%d invalid rows); nothing was loaded",
+			strings.Join(h.failedTables, ", "), h.rejectedRows))
+	}
 	if h.tx != nil {
 		if err := h.tx.Commit(ctx); err != nil {
 			return errs.Wrap(err, "postgres commit")
@@ -246,6 +306,28 @@ type copyWriter struct {
 	pw             *io.PipeWriter
 	copyDone       chan error
 	closed         bool
+
+	v      *tableValidator
+	h      *sinkHooks
+	failed bool
+	rowNum int64
+}
+
+// fail switches the writer to validate-only: the COPY stream is ended and no
+// further row reaches Postgres. The error surfaces when the sink finishes.
+func (w *copyWriter) fail() {
+	if w.failed {
+		return
+	}
+	w.failed = true
+	w.h.failedTables = append(w.h.failedTables, w.table)
+	if w.pw != nil {
+		// End the COPY normally: failing it would abort the transaction, which
+		// must stay usable to introspect and validate the remaining collections.
+		_ = w.pw.Close()
+		<-w.copyDone
+		w.pw = nil
+	}
 }
 
 func (w *copyWriter) Write(row coll.Row) error {
@@ -260,6 +342,13 @@ func (w *copyWriter) Close() error {
 		return nil
 	}
 	w.closed = true
+	if w.v != nil {
+		w.v.summary()
+		w.h.rejectedRows += w.v.rejected
+	}
+	if w.failed {
+		return nil
+	}
 	if w.pw != nil {
 		if err := w.pw.Close(); err != nil {
 			return errs.Wrap(err, "close copy stream", "table", w.table)
@@ -294,6 +383,15 @@ func (w *copyWriter) abort() {
 }
 
 func (w *copyWriter) writeRow(row coll.Row) error {
+	if w.v != nil {
+		w.rowNum++
+		if !w.v.check(row, w.rowNum) {
+			w.fail()
+		}
+	}
+	if w.failed {
+		return nil
+	}
 	row = transformHstoreColumns(row, w.cols, w.hstoreCols)
 	payload, err := copyLine(w.cols, row)
 	if err != nil {
