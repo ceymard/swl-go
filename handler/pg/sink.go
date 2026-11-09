@@ -155,6 +155,9 @@ func (h *sinkHooks) Open(ctx context.Context, col coll.Collection, firstRow coll
 			for _, e := range validator.tableErrs {
 				h.report(col.Name + ": " + e)
 			}
+			for _, e := range validator.tableWarns {
+				h.report("warning: " + col.Name + ": " + e)
+			}
 		}
 	}
 
@@ -354,11 +357,11 @@ func (w *copyWriter) Close() error {
 			return errs.Wrap(err, "close copy stream", "table", w.table)
 		}
 		if err := <-w.copyDone; err != nil {
-			return errs.Wrap(err, "postgres copy", "table", w.table)
+			return w.withWarnings(errs.Wrap(err, "postgres copy", "table", w.table))
 		}
 	}
 	if err := w.flushToTable(); err != nil {
-		return err
+		return w.withWarnings(err)
 	}
 	if _, err := w.tx.Exec(w.ctx, fmt.Sprintf(`DROP TABLE %s`, w.tempTable)); err != nil {
 		return errs.Wrap(err, "drop temp copy table", "table", w.table)
@@ -370,6 +373,15 @@ func (w *copyWriter) Close() error {
 		return err
 	}
 	return nil
+}
+
+// withWarnings points at the earlier warnings when Postgres rejects a load
+// that validation only flagged as suspect.
+func (w *copyWriter) withWarnings(err error) error {
+	if w.v == nil || w.v.warnedRows == 0 {
+		return err
+	}
+	return errs.Wrapf(err, "%d rows of %s were flagged with warnings above", w.v.warnedRows, w.table)
 }
 
 // abort fails the running COPY and waits for it to finish.

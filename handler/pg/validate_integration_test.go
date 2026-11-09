@@ -83,17 +83,20 @@ func TestIntegrationSinkValidation(t *testing.T) {
 	out := stderr.String()
 	for _, want := range []string{
 		"val_a[2] qty: invalid input syntax for type double precision",
-		"val_a[3] label: null value in NOT NULL column",
-		"val_a[4] id: duplicate unique key, first seen at row 1",
+		"warning: val_a[3] label: null value in NOT NULL column",
+		"warning: val_a[4] id: duplicate unique key, first seen at row 1",
 		"val_a[5] ",
 		"label: value too long for type character varying(3)",
 		"amount: numeric field overflow",
-		"val_a[6] ghost: column does not exist in the table",
-		"val_b[2] name: null value in NOT NULL column",
+		"val_a: columns do not exist in the table: ghost",
+		"warning: val_b[2] name: null value in NOT NULL column",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stderr missing %q in:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "val_a[6]") {
+		t.Errorf("unknown columns are reported once per table, not per row:\n%s", out)
 	}
 	if n := countRows(t, ctx, uri, "val_a"); n != 0 {
 		t.Errorf("val_a has %d rows, nothing should have been committed", n)
@@ -137,5 +140,47 @@ func TestParseSinkValidationOptions(t *testing.T) {
 	d, _ := pg.ParseSinkOptions("postgres://localhost/db", nil)
 	if ds := d.(pg.SinkOpts); ds.NoCheck || ds.MaxRejects != 100 || ds.MaxKeyMemMB != 512 {
 		t.Fatalf("defaults %+v", ds)
+	}
+}
+
+func TestIntegrationSinkValidationTriggerFills(t *testing.T) {
+	uri := startPostgres(t)
+	ctx := context.Background()
+	execSQL(t, ctx, uri, `
+		CREATE TABLE trg (id int PRIMARY KEY, name text NOT NULL, code text NOT NULL);
+		CREATE FUNCTION trg_fill() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			NEW.name := COALESCE(NEW.name, 'n/a');
+			NEW.code := COALESCE(NEW.code, 'auto');
+			RETURN NEW;
+		END $$;
+		CREATE TRIGGER trg_fill BEFORE INSERT ON trg FOR EACH ROW EXECUTE FUNCTION trg_fill();`)
+
+	var stderr bytes.Buffer
+	cfg := handlersConfig()
+	cfg.Messages = &msg.Log{Out: &stderr, Verbose: 0}
+	opts, err := pg.ParseSinkOptions(uri, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "code" is absent and name is null on row 2.
+	in := collStream(mapCollection("trg",
+		map[string]any{"id": 1, "name": "a"},
+		map[string]any{"id": 2, "name": nil},
+	))
+	if err := (pg.Sink{}).Sink(ctx, cfg, in, opts); err != nil {
+		t.Fatalf("a trigger fills these columns, load must not be blocked: %v\n%s", err, stderr.String())
+	}
+	if n := countRows(t, ctx, uri, "trg WHERE code = 'auto' AND name IN ('a', 'n/a')"); n != 2 {
+		t.Errorf("%d rows loaded by the trigger, want 2", n)
+	}
+	out := stderr.String()
+	for _, want := range []string{
+		"warning: trg: column code is NOT NULL without default",
+		"warning: trg[2] name: null value in NOT NULL column",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stderr missing %q in:\n%s", want, out)
+		}
 	}
 }

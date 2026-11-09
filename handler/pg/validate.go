@@ -42,7 +42,17 @@ type tableValidator struct {
 	keyLimit int64 // bytes; 0 = unlimited
 	keysOff  bool
 
-	tableErrs []string
+	// Findings Postgres may well accept (triggers can fill NULLs and rewrite
+	// keys, columns discovered after Open are dropped silently) are warnings:
+	// reported, but they never fail the load.
+	warnedRows  int64
+	warnPrinted int
+	warnCounts  map[string]int64
+	warnOrder   []string
+	lateWarned  map[string]bool
+
+	tableErrs  []string // certain failures, reported once per table
+	tableWarns []string // reported once per table
 }
 
 type validatorOpts struct {
@@ -54,8 +64,9 @@ type validatorOpts struct {
 }
 
 // newTableValidator builds the checkers for the collection's columns. Table-level
-// problems (generated columns, missing required columns) are collected in
-// tableErrs for the caller to report once.
+// problems are collected for the caller to report once: tableErrs for what
+// Postgres will certainly refuse (generated columns), tableWarns for the rest
+// (unknown columns, missing NOT NULL columns a trigger might fill).
 func newTableValidator(table string, meta *pgTableMeta, cols []string, cs *coll.ColumnSet, o validatorOpts) *tableValidator {
 	v := &tableValidator{
 		table:      table,
@@ -68,12 +79,16 @@ func newTableValidator(table string, meta *pgTableMeta, cols []string, cs *coll.
 		maxRejects: o.maxRejects,
 		keyLimit:   o.keyLimit,
 		counts:     map[string]int64{},
+		warnCounts: map[string]int64{},
+		lateWarned: map[string]bool{},
 	}
+	var unknown []string
 	pos := make(map[string]int, len(cols))
 	for i, name := range cols {
 		pos[name] = i
 		c := meta.column(name)
 		if c == nil {
+			unknown = append(unknown, name)
 			continue
 		}
 		v.inTable[i] = true
@@ -86,9 +101,13 @@ func newTableValidator(table string, meta *pgTableMeta, cols []string, cs *coll.
 	if o.insertMode {
 		for _, c := range meta.Columns {
 			if _, ok := pos[c.Name]; !ok && c.NotNull && !c.HasDef && !c.Generated {
-				v.tableErrs = append(v.tableErrs, fmt.Sprintf("column %s is NOT NULL without default but the data has no such column", c.Name))
+				v.tableWarns = append(v.tableWarns, fmt.Sprintf("column %s is NOT NULL without default but the data has no such column (a trigger may fill it)", c.Name))
 			}
 		}
+	}
+	if len(unknown) > 0 {
+		// The INSERT names every collection column, so Postgres refuses these.
+		v.tableErrs = append(v.tableErrs, fmt.Sprintf("columns do not exist in the table: %s", strings.Join(unknown, ", ")))
 	}
 	if o.checkDups {
 	uniques:
@@ -111,51 +130,53 @@ type rowProblem struct {
 	column string
 	kind   string
 	msg    string
+	soft   bool // a trigger could make Postgres accept it: warning only
 }
 
-// check validates one row (1-based number rowNum) and reports it when invalid.
-// It returns true when the row is fine.
+// check validates one row (1-based number rowNum). It returns false only for
+// a certain rejection; warnings are reported but the row is still loaded.
 func (v *tableValidator) check(row coll.Row, rowNum int64) bool {
 	var probs []rowProblem
+	hard := false
 	for i, name := range v.cols {
 		cell := row.Cell(i)
 		if !v.inTable[i] {
-			if cell != nil {
-				probs = append(probs, rowProblem{name, "column not in table", "column does not exist in the table; value would be silently dropped"})
-			}
-			continue
+			continue // reported once per table
 		}
 		if cell == nil {
 			if v.notNull[i] {
-				probs = append(probs, rowProblem{name, "null", "null value in NOT NULL column"})
+				probs = append(probs, rowProblem{name, "null", "null value in NOT NULL column (a trigger may fill it)", true})
 			}
 			continue
 		}
 		if chk := v.checks[i]; chk != nil {
 			if e := chk(cellText(cell)); e != nil {
-				probs = append(probs, rowProblem{name, e.Kind, e.Msg})
+				probs = append(probs, rowProblem{name, e.Kind, e.Msg, false})
+				hard = true
 			}
 		}
 	}
-	if len(row) > len(v.cols) {
-		for i := len(v.cols); i < len(row); i++ {
-			if row[i] != nil {
-				name := fmt.Sprintf("#%d", i)
-				if all := v.cs.Columns(); i < len(all) {
-					name = all[i].ColumnName
-				}
-				probs = append(probs, rowProblem{name, "column not in table", "column appeared after the table was opened; value would be silently dropped"})
-			}
+	for i := len(v.cols); i < len(row); i++ {
+		if row[i] == nil {
+			continue
+		}
+		name := fmt.Sprintf("#%d", i)
+		if all := v.cs.Columns(); i < len(all) {
+			name = all[i].ColumnName
+		}
+		if !v.lateWarned[name] {
+			v.lateWarned[name] = true
+			v.emit(fmt.Sprintf("warning: %s: column %s appeared after the table was opened, its values are dropped", v.table, name))
 		}
 	}
-	if len(probs) == 0 && !v.keysOff {
+	if !hard && !v.keysOff {
 		probs = v.checkKeys(row, rowNum, probs)
 	}
 	if len(probs) == 0 {
 		return true
 	}
-	v.report(row, rowNum, probs)
-	return false
+	v.report(row, rowNum, probs, hard)
+	return !hard
 }
 
 func (v *tableValidator) checkKeys(row coll.Row, rowNum int64, probs []rowProblem) []rowProblem {
@@ -178,7 +199,7 @@ func (v *tableValidator) checkKeys(row coll.Row, rowNum int64, probs []rowProble
 		}
 		key := sb.String()
 		if first, dup := kt.seen[key]; dup {
-			probs = append(probs, rowProblem{kt.label, "duplicate key", fmt.Sprintf("duplicate unique key, first seen at row %d", first)})
+			probs = append(probs, rowProblem{kt.label, "duplicate key", fmt.Sprintf("duplicate unique key, first seen at row %d", first), true})
 			continue
 		}
 		kt.seen[key] = rowNum
@@ -195,24 +216,30 @@ func (v *tableValidator) checkKeys(row coll.Row, rowNum int64, probs []rowProble
 	return probs
 }
 
-func (v *tableValidator) report(row coll.Row, rowNum int64, probs []rowProblem) {
-	v.rejected++
+func (v *tableValidator) report(row coll.Row, rowNum int64, probs []rowProblem, hard bool) {
+	counts, order, printed, prefix := v.warnCounts, &v.warnOrder, &v.warnPrinted, "warning: "
+	if hard {
+		v.rejected++
+		counts, order, printed, prefix = v.counts, &v.order, &v.printed, ""
+	} else {
+		v.warnedRows++
+	}
 	for _, p := range probs {
 		k := p.column + ": " + p.kind
-		if _, ok := v.counts[k]; !ok {
-			v.order = append(v.order, k)
+		if _, ok := counts[k]; !ok {
+			*order = append(*order, k)
 		}
-		v.counts[k]++
+		counts[k]++
 	}
-	if v.maxRejects > 0 && v.printed >= v.maxRejects {
+	if v.maxRejects > 0 && *printed >= v.maxRejects {
 		return
 	}
-	v.printed++
+	*printed++
 	parts := make([]string, len(probs))
 	for i, p := range probs {
 		parts[i] = p.column + ": " + p.msg
 	}
-	v.emit(fmt.Sprintf("%s[%d] %s  %s", v.table, rowNum, strings.Join(parts, "; "), v.preview(row)))
+	v.emit(fmt.Sprintf("%s%s[%d] %s  %s", prefix, v.table, rowNum, strings.Join(parts, "; "), v.preview(row)))
 }
 
 func (v *tableValidator) preview(row coll.Row) string {
@@ -230,15 +257,22 @@ func (v *tableValidator) preview(row coll.Row) string {
 	return string(b)
 }
 
-// summary prints per-reason counts once the detailed lines were capped.
+// summary prints totals, plus per-reason counts once detailed lines were capped.
 func (v *tableValidator) summary() {
-	if v.rejected == 0 {
-		return
+	if v.rejected > 0 {
+		v.emit(fmt.Sprintf("%s: %d invalid rows", v.table, v.rejected))
+		if v.maxRejects > 0 && v.printed >= v.maxRejects && v.rejected > int64(v.printed) {
+			for _, k := range v.order {
+				v.emit(fmt.Sprintf("  %s: %d", k, v.counts[k]))
+			}
+		}
 	}
-	v.emit(fmt.Sprintf("%s: %d invalid rows", v.table, v.rejected))
-	if v.maxRejects > 0 && v.printed >= v.maxRejects && v.rejected > int64(v.printed) {
-		for _, k := range v.order {
-			v.emit(fmt.Sprintf("  %s: %d", k, v.counts[k]))
+	if v.warnedRows > 0 {
+		v.emit(fmt.Sprintf("warning: %s: %d rows with warnings", v.table, v.warnedRows))
+		if v.maxRejects > 0 && v.warnPrinted >= v.maxRejects && v.warnedRows > int64(v.warnPrinted) {
+			for _, k := range v.warnOrder {
+				v.emit(fmt.Sprintf("  %s: %d", k, v.warnCounts[k]))
+			}
 		}
 	}
 }

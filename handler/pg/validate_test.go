@@ -98,37 +98,47 @@ func TestValidatorRows(t *testing.T) {
 	v, lines := newTestValidator(t, meta, []string{"id", "qty", "created", "extra"}, validatorOpts{
 		maxRejects: 2, insertMode: true, checkDups: true,
 	})
-	if len(v.tableErrs) != 1 || !strings.Contains(v.tableErrs[0], "req") {
-		t.Fatalf("table errors: %v", v.tableErrs)
+	if len(v.tableErrs) != 1 || len(v.tableWarns) != 1 {
+		t.Fatalf("table errors %v, warnings %v", v.tableErrs, v.tableWarns)
+	}
+	if !strings.Contains(v.tableWarns[0], "column req is NOT NULL without default") ||
+		!strings.Contains(v.tableErrs[0], "columns do not exist in the table: extra") {
+		t.Fatalf("table errors %v, warnings %v", v.tableErrs, v.tableWarns)
 	}
 	rows := []coll.Row{
 		{1, "1.5", "2024-01-01", nil},
-		{2, "abc", nil, nil},           // bad float, explicit null overrides default
-		{1, 2.0, "2024-01-01", nil},    // duplicate id
-		{3, 1.0, "2024-01-01", "oops"}, // unknown column holds a value
-		{nil, 1.0, "2024-01-01", nil},  // null id
+		{2, "abc", nil, nil},           // bad float: certain; explicit null is only a warning
+		{1, 2.0, "2024-01-01", nil},    // duplicate id: a trigger might rewrite keys
+		{3, 1.0, "2024-01-01", "oops"}, // unknown column: reported once per table, not per row
+		{nil, 1.0, "2024-01-01", nil},  // null id: a trigger might fill it
 		{4, 1.0, "2024-01-01", nil, 7}, // column discovered after open
 	}
 	var ok []bool
 	for i, r := range rows {
 		ok = append(ok, v.check(r, int64(i+1)))
 	}
-	want := []bool{true, false, false, false, false, false}
+	want := []bool{true, false, true, true, true, true}
 	for i := range want {
 		if ok[i] != want[i] {
 			t.Errorf("row %d: ok=%v want %v", i+1, ok[i], want[i])
 		}
 	}
-	if len(*lines) != 2 {
-		t.Fatalf("detail lines capped at 2, got %d: %q", len(*lines), *lines)
+	if len(*lines) != 4 {
+		t.Fatalf("want reject + 2 warnings + late column, got %d: %q", len(*lines), *lines)
 	}
 	if !strings.Contains((*lines)[0], "t[2] qty: invalid input syntax for type double precision") ||
-		!strings.Contains((*lines)[0], "created: null value in NOT NULL column") {
+		!strings.Contains((*lines)[0], "created: null value in NOT NULL column") ||
+		strings.HasPrefix((*lines)[0], "warning") {
 		t.Errorf("row 2 line: %s", (*lines)[0])
+	}
+	if !strings.HasPrefix((*lines)[1], "warning: t[3] id: duplicate unique key, first seen at row 1") ||
+		!strings.HasPrefix((*lines)[2], "warning: t[5] id: null value") ||
+		!strings.Contains((*lines)[3], "column #4 appeared after the table was opened") {
+		t.Errorf("warning lines: %q", *lines)
 	}
 	v.summary()
 	all := strings.Join(*lines, "\n")
-	if !strings.Contains(all, "t: 5 invalid rows") || !strings.Contains(all, "id: duplicate key: 1") {
+	if !strings.Contains(all, "t: 1 invalid rows") || !strings.Contains(all, "warning: t: 2 rows with warnings") {
 		t.Errorf("summary missing:\n%s", all)
 	}
 }
